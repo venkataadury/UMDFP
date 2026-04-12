@@ -8,14 +8,17 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
-#include <gzstream.h>
+//#include <gzstream.h>
 #include <cstdint>
 #include <algorithm>
+#include <cmath>
+#include <cassert>
 
 typedef fpos_t file_pointer;
 
-
-// Add a byte with ascii value 244 to end of header as the 'magic number' to avoid corruption
+// Add a random 32-byte signature to the start of the file (not once per each molecule)
+#define UMF_SIGNATURE "UMFe63c74b084c7fb08318c3c544966f" // 32 bytes
+// Add a byte with ascii value 31 to start of header as the 'magic number' to avoid corruption
 static const char* UMFHeader = "\x1eUMF1\n"; // UMF version 1.0
 
 // A compresser to take Universal Molecular Description (UMD) files to compress them into easy-to-access Universal Molecular Format (UMF) files.
@@ -82,8 +85,9 @@ struct UMDAtomData
     float x, y, z; // 3D coordinates
     char element[3]; // Element symbol (e.g., C, H, O)
     float charge; // Charge of the atom
-    int hybridization; // Hybridization state (e.g., sp, sp2, sp3)
+    unsigned short int hybridization; // Hybridization state (e.g., sp, sp2, sp3)
     bool aromatic; // Whether the atom is aromatic
+    short int formal_charge=0; // Formal charge of the atom
 };
 
 class UMDAtom
@@ -98,7 +102,7 @@ public:
         int index;
         int arom;
         double posx, posy, posz;
-        sscanf(line.c_str(), "%d %s %lf %lf %lf %f %d %d",&index, data.element, &posx, &posy, &posz, &data.charge, &data.hybridization, &arom);
+        sscanf(line.c_str(), "%d %s %lf %lf %lf %f %hu %d %hd",&index, data.element, &posx, &posy, &posz, &data.charge, &data.hybridization, &arom, &data.formal_charge);
         data.x = posx;
         data.y = posy;
         data.z = posz;
@@ -117,8 +121,9 @@ public:
     inline float getY() const {return data.y;}
     inline float getZ() const {return data.z;}
     inline float getCharge() const {return data.charge;}
-    inline int getHybridization() const {return data.hybridization;}
+    inline unsigned short int getHybridization() const {return data.hybridization;}
     inline bool isAromatic() const {return data.aromatic;}
+    inline short int getFormalCharge() const {return data.formal_charge;}
 };
 
 struct UMDBondData
@@ -286,6 +291,13 @@ public:
     inline UMDAtom& getAtom(int index) {return atoms[index];}
     inline const UMDBond& getBond(int index) const {return bonds[index];}
     inline UMDBond& getBond(int index) {return bonds[index];}
+
+    int computeNetCharge() const
+    {
+        float net_charge=0;
+        for(const UMDAtom& atom : atoms) net_charge+=atom.getCharge();
+        return ::round(net_charge);
+    }
 };
 
 #define ATOM_DATA_SIZE sizeof(UMDAtomData)
@@ -360,6 +372,7 @@ class UMFWriter
     FILE* file;
     CyclicArray<int, 256> lookahead_256_sizes; // Store the sizes of the next 256 molecules for look-ahead
     CyclicArray<unsigned long, 65536> lookahead_65536_sizes; // Store the sizes of the next 65536 molecules for look-ahead
+    CyclicArray<file_pointer, 256> short_molecule_positions; // Store the file positions of the last 256 molecules for potential future use (e.g., seeking back to them if needed)
     CyclicArray<file_pointer, 65536> molecule_positions; // Store the file positions of the last 65536 molecules for potential future use (e.g., seeking back to them if needed)
     int molnum=0; // Number of molecules written so far, used to determine when to update look-ahead sizes
 public:
@@ -371,6 +384,8 @@ public:
             std::cerr << "Error opening file for writing: " << filename << std::endl;
             throw std::runtime_error("Could not open file");
         }
+        // Write the signature to the start of the file
+        fwrite(UMF_SIGNATURE, sizeof(char), strlen(UMF_SIGNATURE), file);
     }
     ~UMFWriter()
     {
@@ -381,6 +396,8 @@ public:
     void writeMolecule(const UMDMolecule& molecule, bool build_lookahead=true)
     {
         fgetpos(file,&(molecule_positions[0])); // Store the file position of the current molecule for potential future use (e.g., seeking back to it if needed)
+        fgetpos(file,&(short_molecule_positions[0])); // Store the file position of the current molecule for potential future use (e.g., seeking back to it if needed)
+        short_molecule_positions.step();
         molecule_positions.step();
         int molsize=molecule.toFile(file);
         molnum++;
@@ -396,7 +413,7 @@ public:
                 fgetpos(file, &current_pos);
                 for(int i=0;i<256;i++) total_256_size+=lookahead_256_sizes[i];
                 // Update the look-ahead size for the next 256 molecules in the header of the molecule that was written 256 molecules ago
-                file_pointer pos = molecule_positions.get(-256);
+                file_pointer pos = short_molecule_positions.get(0);
                 fsetpos(file, &pos);
                 fseek(file, sizeof(char)*strlen(UMFHeader) + sizeof(int), SEEK_CUR); // Move to the position of the look-ahead size in the header
                 fwrite(&total_256_size, sizeof(int), 1, file);
@@ -472,6 +489,7 @@ public:
             throw std::runtime_error("Could not open file");
         }
         this->_findPointerFile(pointer_filename);
+        this->_verifySignature();
         this->_verifyAndReadHeader();
         ended=false;
     }
@@ -479,6 +497,7 @@ public:
     {
         if (file)
             fclose(file);
+        if(has_pointer && pointer_file) fclose(pointer_file);
     }
 private:
     void _findPointerFile(std::string pointer_filename)
@@ -492,6 +511,17 @@ private:
             return; // If pointer file doesn't exist, just start reading from the beginning of the UMF file and hope for the best (i.e., that the desired molecule is near the beginning of the file). This allows the UMFReader to still function even without the pointer file, albeit with potentially much slower access for molecules that are far into the file.
         }
         has_pointer=true;
+    }
+    void _verifySignature()
+    {
+        char signature[33];
+        fread(signature, sizeof(char), 32, file);
+        signature[32]='\0';
+        if(strcmp(signature, UMF_SIGNATURE)!=0)
+        {
+            std::cerr << "Error: Invalid UMF file signature. Expected '" << UMF_SIGNATURE << "', but found '" << signature << "'. The file may be corrupted or not a valid UMF file.\n";
+            throw std::runtime_error("Invalid UMF file signature");
+        }
     }
     void _verifyAndReadHeader()
     {
@@ -546,6 +576,8 @@ public:
         std::cout << "Next molecule size: " << current_header.size << " bytes" << std::endl;
         std::cout << "Next 256 molecules size: " << current_header.lookahead_256_size << " bytes" << std::endl;
         std::cout << "Next 65536 molecules size: " << current_header.lookahead_65536_size << " bytes" << std::endl;
+        std::cout << "Next molecule number of atoms: " << current_header.natoms << std::endl;
+        std::cout << "Next molecule number of bonds: " << current_header.nbonds << std::endl;
         std::cout << "Next molecule name: " << current_header.name << std::endl;
         std::cout << "Next molecule SMILES: " << current_header.smiles << std::endl;
     }
@@ -598,7 +630,7 @@ public:
             UMDAtomData atom_data;
             fread(&atom_data, sizeof(UMDAtomData), 1, file);
             UMDAtom atom(atom_data);
-            lines.push_back(std::to_string(i)+" "+std::string(atom.getData().element)+" "+std::to_string(atom.getData().x)+" "+std::to_string(atom.getData().y)+" "+std::to_string(atom.getData().z)+" "+std::to_string(atom.getData().charge)+" "+std::to_string(atom.getData().hybridization)+" "+std::to_string(atom.getData().aromatic));
+            lines.push_back(std::to_string(i)+" "+std::string(atom.getData().element)+" "+std::to_string(atom.getData().x)+" "+std::to_string(atom.getData().y)+" "+std::to_string(atom.getData().z)+" "+std::to_string(atom.getData().charge)+" "+std::to_string(atom.getData().hybridization)+" "+std::to_string(atom.getData().aromatic)+" "+std::to_string(atom.getData().formal_charge));
         }
 
         // Read bonds
@@ -660,6 +692,15 @@ public:
         fsetpos(file, &position); // Move to the position of the header of the molecule block
         fseek(file, -sizeof(char)*strlen(UMFHeader), SEEK_CUR); // Move back to the position of the UMF header for that molecule
         try{this->_verifyAndReadHeader();} // Read the header of the molecule at the new position for future reads
+        catch(const NoHeaderRemainingException& e)
+        {
+            ended=true;
+        }
+    }
+
+    inline void _forceVerifyNextHeader()
+    {
+        try{this->_verifyAndReadHeader();} // Read the header of the next molecule for future reads
         catch(const NoHeaderRemainingException& e)
         {
             ended=true;
