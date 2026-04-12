@@ -477,9 +477,10 @@ class UMFReader
     bool ended=false;
     std::string filename;
     bool has_pointer=false;
+    std::string pointer_filename;
     FILE* pointer_file;
 public:
-    UMFReader(std::string filename, const std::string& pointer_filename="")
+    UMFReader(std::string filename, const std::string& pointer_filename="", bool use_pointer_file=true)
     {
         this->filename=filename;
         file = fopen(filename.c_str(), "rb");
@@ -488,7 +489,8 @@ public:
             std::cerr << "Error opening file for reading: " << filename << std::endl;
             throw std::runtime_error("Could not open file");
         }
-        this->_findPointerFile(pointer_filename);
+        this->pointer_filename=pointer_filename;
+        if(use_pointer_file) this->_findPointerFile(pointer_filename);
         this->_verifySignature();
         this->_verifyAndReadHeader();
         ended=false;
@@ -570,6 +572,7 @@ public:
     inline unsigned long getNext65536MoleculesSize() const {return current_header.lookahead_65536_size;}
     inline std::string getNextMoleculeName() const {return current_header.name;}
     inline std::string getNextMoleculeSMILES() const {return current_header.smiles;}
+    inline bool hasPointerFile() const {return has_pointer;}
 
     void dumpHeader()
     {
@@ -706,6 +709,13 @@ public:
             ended=true;
         }
     }
+
+    inline bool refreshPointerFile()
+    {
+        if(pointer_file) fclose(pointer_file);
+        this->_findPointerFile(this->pointer_filename); // Try to find the pointer file again (in case it was just created by another process, for example)
+        return has_pointer;
+    }
 };
 
 
@@ -767,7 +777,7 @@ static void rebuildLookAhead(const std::string& filename, std::string output_fil
 static void buildUMFPointerFile(const std::string& umf_filename, std::string pointer_filename="")
 {
     if(pointer_filename.empty()) pointer_filename=umf_filename+"p"; // If no pointer filename is provided, use the UMF filename with .ptr extension
-    UMFReader reader(umf_filename);
+    UMFReader reader(umf_filename, pointer_filename, false); // Open the UMF file without using the pointer file (since we're building it)
     std::vector<std::string> molecule_names;
     std::vector<file_pointer> molecule_positions;
     while(!reader.hasEnded())

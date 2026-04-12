@@ -56,7 +56,7 @@ int main(int argc, char** argv)
             try
             {
                 UMDMolecule mol = reader.readMolecule();
-                formatter.formatMolecule(mol, std::cout);
+                formatter.formatMolecule(mol, std::cout, "GASTEIGER");
             }
             catch(const NoHeaderRemainingException& e)
             {
@@ -65,43 +65,5 @@ int main(int argc, char** argv)
             }
         }
     }
-    /*
-    int ligid;
-    bool ligindex=true;
-    try{ligid = std::stoi(query);}
-    catch(const std::exception& e) {ligindex=false;}
-
-    if(ligindex) std::cout << "Querying for molecule with index: " << ligid << std::endl;
-    else std::cout << "Querying for molecule with name: " << query << std::endl;
-    
-    while(!reader.hasEnded())
-    {
-        try
-        {
-            if(ligindex)
-            {
-                if(ligid!=0) reader.skipMolecule(ligid);
-                UMDMolecule mol = reader.readMolecule();
-                formatter.formatMolecule(mol, std::cout);
-                break;
-            }
-            else
-            {
-                std::string mol_name = reader.getHeader().name;
-                if(mol_name==query)
-                {
-                    UMDMolecule mol = reader.readMolecule();
-                    formatter.formatMolecule(mol, std::cout);
-                    break;
-                }
-                else reader.skipMolecule();
-            }
-        }
-        catch(const NoHeaderRemainingException& e)
-        {
-            std::cout << "No more molecules to read, exiting." << std::endl;
-            break;
-        }
-    }*/
     return 0;
 }

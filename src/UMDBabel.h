@@ -7,7 +7,7 @@ class GenericMoleculeFileFormat
 {
 public:
     GenericMoleculeFileFormat() {}
-    virtual std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out) const = 0;
+    virtual std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out, const std::string& charge_method="none") const = 0;
 };
 
 class Mol2Format : public GenericMoleculeFileFormat
@@ -15,7 +15,7 @@ class Mol2Format : public GenericMoleculeFileFormat
     std::string resname="UNL"; // Default residue name for all molecules (can be modified in the future to allow different residue names for different molecules if needed) 
 public:
     Mol2Format() {}
-    std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out) const override
+    std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out, const std::string& charge_method="NO_CHARGES") const override
     {
         char atom_line[100];
         out << "# Name: " << molecule.getName() << "\n";
@@ -25,7 +25,7 @@ public:
         out << molecule.getName() << "\n";
         out << molecule.getNumAtoms() << " " << molecule.getNumBonds() << " 0 0 0\n"; // Num atoms, num bonds, num substructures, num features, num sets (the last three are set to 0 for simplicity)
         out << "SMALL\n"; // Molecule type 
-        out << "NO_CHARGES\n\n"; // Charge type
+        out << charge_method << "\n\n"; // Charge type
 
         out << "@<TRIPOS>ATOM\n";
         for(int i=0;i<molecule.getNumAtoms();i++)
@@ -77,7 +77,7 @@ class SDFFormat : public GenericMoleculeFileFormat
 {
 public:
     SDFFormat() {}
-    std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out) const override
+    std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out, const std::string& charge_method="none") const override
     {
         // Comment with SMILES String
         

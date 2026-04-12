@@ -4,13 +4,15 @@
 int main(int argc, char** argv)
 {
     std::string output_file = "test.umf";
+    std::string input_file = "to_process.umd";
+    if(argc>=2) input_file = argv[1];
     if(argc>=3) output_file = argv[2];
     std::cout << "Output file: " << output_file << std::endl;
     /*std::cout << "Size of UMDAtomData: " << sizeof(UMDAtomData) << " bytes, Size of UMDBondData: " << sizeof(UMDBondData) << " bytes" << std::endl; // Debug line (will be removed in the future)
     exit(0);*/
     UMFWriter writer(output_file);
 
-    UMDReader base_reader("GastUMD.umd");
+    UMDReader base_reader(input_file);
     while(true)
     {
         try
