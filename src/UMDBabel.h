@@ -81,15 +81,15 @@ public:
     {
         // Comment with SMILES String
         
-        out << molecule.getName() << "\n"; // Line 1: Molecule name
+        out << "\n" << molecule.getName() << "\n"; // Line 1: Molecule name
         out << "  UMDBabel 0.1 2026\n"; // Line 2: Program information (can be modified in the future to include more specific information if needed)
-        out << molecule.getNumAtoms() << " " << molecule.getNumBonds() << " 0 0 0\n"; // Line 3: Number of atoms, number of bonds, and other counts (the last three are set to 0 for simplicity)
+        out << molecule.getNumAtoms() << " " << molecule.getNumBonds() << " 0 0 0  0  0  0  0  0999 V2000\n"; // Line 3: Number of atoms, number of bonds, and other counts (the last three are set to 0 for simplicity)
 
         // Atom block
         for(int i=0;i<molecule.getNumAtoms();i++)
         {
             const UMDAtom& atom = molecule.getAtom(i);
-            out << std::fixed << std::setprecision(4) << std::setw(10) << atom.getX() << std::setw(10) << atom.getY() << std::setw(10) << atom.getZ() << " " << atom.getElement() << "\n"; // x, y, z, element symbol
+            out << std::fixed << std::setprecision(4) << std::setw(10) << atom.getX() << std::setw(10) << atom.getY() << std::setw(10) << atom.getZ() << " " << atom.getElement() << "  0  0  0  0  0  0  0  0  0  0  0  0\n"; // x, y, z, element symbol
         }
 
         // Bond block
@@ -100,6 +100,25 @@ public:
             if(molecule.getAtom(bond.getAtom1ID()).getData().aromatic && molecule.getAtom(bond.getAtom2ID()).getData().aromatic) btype=4; // Set bond type to aromatic if both atoms are aromatic
 
             out << std::setw(3) << bond.getAtom1ID()+1 << std::setw(3) << bond.getAtom2ID()+1 << std::setw(3) << btype << "\n"; // Atom1 ID, atom2 ID, bond type
+        }
+        int num_formal_charges=0;
+        for(int i=0;i<molecule.getNumAtoms();i++)        {
+            if(molecule.getAtom(i).getFormalCharge()!=0)            {
+                num_formal_charges++;
+                break;
+            }
+        }
+        if(num_formal_charges>0)
+        {
+            out << "M  CHG  " << num_formal_charges << " "; // Line indicating the number of atoms with formal charges
+            for(int i=0;i<molecule.getNumAtoms();i++)
+            {
+                int formal_charge = molecule.getAtom(i).getFormalCharge();
+                if(formal_charge!=0)                {
+                    out << std::setw(3) << i+1 << std::setw(4) << formal_charge << " "; // Atom ID and formal charge
+                }
+            }
+            out << "\n";
         }
         
         out << "M  END\n"; // End of molecule block for SDF format
