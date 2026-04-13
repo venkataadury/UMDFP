@@ -6,7 +6,7 @@
 
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -g -w -O3 -I.
+CXXFLAGS = -g -O3 -I.
 LDFLAGS = 
 
 # Source files and corresponding executables
