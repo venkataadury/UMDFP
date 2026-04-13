@@ -107,6 +107,7 @@ public:
         data.y = posy;
         data.z = posz;
         data.aromatic = (arom != 0);
+        data.element[2]='\0'; // Ensure null termination of the element symbol
     }
     UMDAtom(UMDAtomData data) : data(data) {}
     UMDAtom(const ByteString& bs) {this->fromByteString(bs);}
@@ -534,7 +535,6 @@ private:
         while (strcmp(header, UMFHeader) != 0)
         {
             if (feof(file)) throw NoHeaderRemainingException();
-            
             if(!warned)
             {
                 std::cerr << "Warning: UMF header not found at expected position, attempting to resync..." << std::endl;

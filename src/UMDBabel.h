@@ -1,6 +1,7 @@
 #ifndef MOLFORMAT_CONVERTER_H
 #define MOLFORMAT_CONVERTER_H 1
 #include "UMDFP.h"
+#include "UMFHelpers.h"
 #include <iomanip>
 
 class GenericMoleculeFileFormat
@@ -128,5 +129,103 @@ public:
         return out;
     }
 };
+
+class PDBQTFormat : public GenericMoleculeFileFormat
+{
+    bool write_H; // Whether to include hydrogens in the output (can be set to false for docking programs that add hydrogens automatically, or true for programs that require explicit hydrogens)
+public:
+    PDBQTFormat(bool write_H=true) {this->write_H=write_H;}
+    std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out, const std::string& charge_method="none") const override
+    {
+        out << "REMARK Name: " << molecule.getName() << "\n";
+        out << "REMARK SMILES: " << molecule.getSMILES().getData() << "\n";
+        out << "REMARK Net charge: " << molecule.computeNetCharge() << "\n";
+        out << "REMARK Charge method: " << charge_method << "\n";
+        // Generate branches
+        std::vector<std::pair<int,int>> tree_rep=generateDFSTraversalOrder(molecule, 0, write_H); // Generate a DFS traversal order of the molecule starting from the first atom (index 0), including hydrogens if write_H is true
+        // Find all atoms in a ring
+        std::pair<std::vector<bool>,std::vector<std::vector<int>>> in_ring_data = computeAtomRingStatus(molecule);
+        const std::vector<bool>& in_ring = in_ring_data.first;
+        const std::vector<std::vector<int>>& rings = in_ring_data.second;
+        
+        std::vector<bool> parent_list(molecule.getNumAtoms(), false);
+        std::vector<std::string> last_branch={"ROOT"};
+        std::string branch_name,atom_type;
+        int torsdof=0;
+
+        std::vector<int> written_index(molecule.getNumAtoms(), -1);
+        int written_count=0;
+        
+        for(const auto& [atom_index, parent_index] : tree_rep)
+        {
+            const UMDAtom& atom = molecule.getAtom(atom_index);
+            if(AtomIsHydrogen(atom) && !write_H) continue; // Skip hydrogens if write_H is false
+            if(parent_index==-1) out << "ROOT\n";
+            else if(getNeighborIndices(molecule, atom_index, false).size()==1) {}
+            else
+            {
+                if(parent_list[parent_index]) // If the parent already has a child, this is a new branch
+                {
+                    out << "END" << last_branch.back() << "\n"; // End the last branch
+                    last_branch.pop_back();
+                    /*char raw_branch_name[32];
+                    sprintf(raw_branch_name, "BRANCH   %d  %d", parent_index+1, atom_index+1);
+                    raw_branch_name[31]='\0'; // Ensure null termination*/
+                    branch_name = "BRANCH   " + std::to_string(written_index[parent_index]+1) + "  " + std::to_string(written_index[atom_index]+1);
+                    out << branch_name << "\n";
+                    last_branch.push_back(branch_name);
+                } 
+                else parent_list[parent_index]=true; // Mark the parent as having a child
+                if(parent_index!=-1 && getNeighborIndices(molecule, parent_index, false).size()>1 && getNeighborIndices(molecule, atom_index, false).size()>1)
+                {
+                    bool ring_matched=false;
+                    for(const std::vector<int>& ring : rings)
+                    {
+                        if(contains(ring, parent_index) && contains(ring, atom_index))
+                        {
+                            ring_matched=true;
+                            break;
+                        }
+                    }
+                    // Exceptions
+                    // 1. Amide
+                    // 2. Non-sigma bonds
+                    // 3. In same ring
+                    if(ring_matched) {}
+                    else if(BondIsAmide(molecule, parent_index, atom_index)) {}
+                    else if(getBondBetweenAtoms(molecule, parent_index, atom_index).getBondType()>3) {}
+                    else torsdof++;
+                    
+                } 
+            }
+
+            char atom_line[256];
+            atom_type=(AtomIsCarbon(atom) && atom.isAromatic()) ? "" : atom.getElement();
+            if(atom.isAromatic()) atom_type += "A"; // Append A to the atom type if the atom is aromatic (this is a common convention in PDBQT files to indicate aromatic atoms, but can be modified in the future if needed to follow a different convention or include more specific information)
+            sprintf(atom_line, "ATOM  %5d  %-3s UNL     0    %8.3f%8.3f%8.3f%6.2f%6.2f    %+3.3f %-3s\n", written_count+1, atom.getElement().c_str(), atom.getX(), atom.getY(), atom.getZ(), 0.0f, 0.0f, atom.getCharge(), atom_type.c_str());
+            atom_line[255]='\0'; // Ensure null termination
+            out << atom_line; // Atom ID, atom type, x, y, z, charge
+            written_index[atom_index]=written_count+1;
+            written_count++;
+        }
+        while(!last_branch.empty())
+        {
+            out << "END" << last_branch.back() << "\n"; // End any remaining open branches
+            last_branch.pop_back();
+        }
+        out << "TORSDOF " << torsdof << "\n"; // Number of rotatable bonds (this is a simplification, as it assumes that every branch point corresponds to a rotatable bond, which may not always be the case, but can be modified in the future to include a more accurate calculation of rotatable bonds if needed)
+        for(const std::vector<int>& ring : rings)
+        {
+            out << "REMARK RING ";
+            for(int atom_index : ring)
+            {
+                out << written_index[atom_index] << " (" << molecule.getAtom(atom_index).getElement() << ") ";
+            }
+            out << "\n";
+        }
+        return out;
+    }
+};
+
 
 #endif
