@@ -135,12 +135,14 @@ class PDBQTFormat : public GenericMoleculeFileFormat
     bool write_H; // Whether to include hydrogens in the output (can be set to false for docking programs that add hydrogens automatically, or true for programs that require explicit hydrogens)
 public:
     PDBQTFormat(bool write_H=true) {this->write_H=write_H;}
-    std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out, const std::string& charge_method="none") const override
+    std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& _out, const std::string& charge_method="none") const override
     {
-        out << "REMARK Name: " << molecule.getName() << "\n";
-        out << "REMARK SMILES: " << molecule.getSMILES().getData() << "\n";
-        out << "REMARK Net charge: " << molecule.computeNetCharge() << "\n";
-        out << "REMARK Charge method: " << charge_method << "\n";
+        std::stringstream out;
+        std::stringstream remarks;
+        remarks << "REMARK Name: " << molecule.getName() << "\n";
+        remarks << "REMARK SMILES: " << molecule.getSMILES().getData() << "\n";
+        remarks << "REMARK Net charge: " << molecule.computeNetCharge() << "\n";
+        remarks << "REMARK Charge method: " << charge_method << "\n";
         // Generate branches
         std::vector<std::pair<int,int>> tree_rep=generateDFSTraversalOrder(molecule, 0, write_H); // Generate a DFS traversal order of the molecule starting from the first atom (index 0), including hydrogens if write_H is true
         // Find all atoms in a ring
@@ -152,6 +154,7 @@ public:
         std::vector<std::string> last_branch={"ROOT"};
         std::string branch_name,atom_type;
         int torsdof=0;
+        
 
         std::vector<int> written_index(molecule.getNumAtoms(), -1);
         int written_count=0;
@@ -164,18 +167,7 @@ public:
             else if(getNeighborIndices(molecule, atom_index, false).size()==1) {}
             else
             {
-                if(parent_list[parent_index]) // If the parent already has a child, this is a new branch
-                {
-                    out << "END" << last_branch.back() << "\n"; // End the last branch
-                    last_branch.pop_back();
-                    /*char raw_branch_name[32];
-                    sprintf(raw_branch_name, "BRANCH   %d  %d", parent_index+1, atom_index+1);
-                    raw_branch_name[31]='\0'; // Ensure null termination*/
-                    branch_name = "BRANCH   " + std::to_string(written_index[parent_index]+1) + "  " + std::to_string(written_index[atom_index]+1);
-                    out << branch_name << "\n";
-                    last_branch.push_back(branch_name);
-                } 
-                else parent_list[parent_index]=true; // Mark the parent as having a child
+                bool is_tors=false;
                 if(parent_index!=-1 && getNeighborIndices(molecule, parent_index, false).size()>1 && getNeighborIndices(molecule, atom_index, false).size()>1)
                 {
                     bool ring_matched=false;
@@ -194,9 +186,21 @@ public:
                     if(ring_matched) {}
                     else if(BondIsAmide(molecule, parent_index, atom_index)) {}
                     else if(getBondBetweenAtoms(molecule, parent_index, atom_index).getBondType()>3) {}
-                    else torsdof++;
-                    
+                    else {torsdof++; is_tors=true;}
+                }
+                
+                if(parent_list[parent_index] || (last_branch.back()=="ROOT" && is_tors)) // If the parent already has a child, this is a new branch
+                {
+                    out << "END" << last_branch.back() << "\n"; // End the last branch
+                    last_branch.pop_back();
+                    /*char raw_branch_name[32];
+                    sprintf(raw_branch_name, "BRANCH   %d  %d", parent_index+1, atom_index+1);
+                    raw_branch_name[31]='\0'; // Ensure null termination*/
+                    branch_name = "BRANCH   " + std::to_string(written_index[parent_index]+1) + "  " + std::to_string(written_index[atom_index]+1);
+                    out << branch_name << "\n";
+                    last_branch.push_back(branch_name);
                 } 
+                else parent_list[parent_index]=true; // Mark the parent as having a child
             }
 
             char atom_line[256];
@@ -216,14 +220,15 @@ public:
         out << "TORSDOF " << torsdof << "\n"; // Number of rotatable bonds (this is a simplification, as it assumes that every branch point corresponds to a rotatable bond, which may not always be the case, but can be modified in the future to include a more accurate calculation of rotatable bonds if needed)
         for(const std::vector<int>& ring : rings)
         {
-            out << "REMARK RING ";
+            remarks << "REMARK RING ";
             for(int atom_index : ring)
             {
-                out << written_index[atom_index] << " (" << molecule.getAtom(atom_index).getElement() << ") ";
+                remarks << written_index[atom_index] << " (" << molecule.getAtom(atom_index).getElement() << ") ";
             }
-            out << "\n";
+            remarks << "\n";
         }
-        return out;
+        _out << remarks.str() << out.str(); 
+        return _out;
     }
 };
 
