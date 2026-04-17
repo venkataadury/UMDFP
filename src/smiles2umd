@@ -1,0 +1,247 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# ### Convert SMILES Strings into completed 'UMD' files
+# UMD: Universal Molecular Description files. This is a precursor to the more compressed and faster-to-traverse MF (Universal Molecular Format) files
+
+# In[1]:
+
+
+import os,sys
+import rdkit
+from rdkit import Chem
+from rdkit.Chem import AllChem
+import numpy as np
+from openff.toolkit import Molecule
+from openff.toolkit.utils.toolkits import AmberToolsToolkitWrapper
+from openff.toolkit.utils.exceptions import UndefinedStereochemistryError,RadicalsNotSupportedError
+from General import *
+import argparse
+
+# In[2]:
+
+
+'''
+props=AllChem.MMFFGetMoleculeProperties(m1h)
+for i in range(m1h.GetNumAtoms()):
+    charge = props.GetMMFFPartialCharge(i)
+    print(charge)
+'''
+print("OpenFF Molecule parameterizer loading")
+HYBRIDIZATION={"S": 0, "SP": 1, "SP2": 2, "SP3": 3, "SP3D": 4, "SP3D2": 5}
+ELEMENTS={1: "H", 3: "Li", 4: "Be", 5: "B", 6: "C", 7: "N", 8: "O", 9: "F",
+          12: "Mg", 14: "Si", 15: "P", 16: "S", 17: "Cl", 26: "Fe", 35: "Br",
+          53: "I", 46: "Pd", 78: "Pt", 34: "Se", 30: "Zn"}
+BOND_ORDERS={rdkit.Chem.rdchem.BondType.SINGLE: 2, rdkit.Chem.rdchem.BondType.DOUBLE: 4, rdkit.Chem.rdchem.BondType.AROMATIC: 3, rdkit.Chem.rdchem.BondType.TRIPLE: 6}
+
+
+# In[3]:
+
+
+def openff_charge(mol,method="am1bcc"):
+    off_mol = Molecule.from_rdkit(mol)
+    off_mol.assign_partial_charges(partial_charge_method=method)
+    rdkit_mol = off_mol.to_rdkit()
+    return rdkit_mol
+
+def rdkit_mmff94(mol):
+    props=AllChem.MMFFGetMoleculeProperties(mol)
+    for i,a in enumerate(mol.GetAtoms()):
+        charge = props.GetMMFFPartialCharge(i)
+        a.SetDoubleProp("PartialCharge",charge)
+    return mol
+
+def no_charges(mol): return mol
+
+failmol=None
+def processMolecule(smistr, name=None, charge_method="am1bcc"):
+    global failmol
+    namerep=smistr if name is None else name
+    mol=Chem.MolFromSmiles(smistr)
+    if mol is None: raise ValueError("RDKit could not process the SMILES String '"+smistr+"'")
+
+    mol_h=AllChem.AddHs(mol)
+    eret=AllChem.EmbedMolecule(mol_h, AllChem.ETKDGv2())
+    if eret!=0:
+        if eret==-1:
+            failmol=mol
+            raise ValueError("Valency satisfaction failed. You can check the global 'failmol' object to see if the molecule has obvious flaws")
+        else:
+            print("WARN: Molecule has multiple 3D representations. One will be chosen at random")
+    AllChem.AssignStereochemistryFrom3D(mol_h)
+    try: minret=AllChem.MMFFOptimizeMolecule(mol_h)
+    except UndefinedStereochemistryError: pass
+    aromseq=[a.GetIsAromatic() for a in mol_h.GetAtoms()]
+    
+    if minret==-1:
+        print("WARN: Minimization for '"+namerep+"' failed to run (This is NOT a convergence issue; the forcefield failed to setup)\n Known unsupported atoms:\n1. Se/Te\n2. Any element with more than 4 connections (i.e. sp3d, sp3d2, etc.)\n")
+    elif minret>0:
+        # Skip warning for this
+        pass
+    if type(charge_method)==str:
+        charged_mol = openff_charge(mol_h,charge_method)
+    else:
+        try: charged_mol =charge_method(mol_h)
+        except:
+            try: charged_mol = openff_charge(mol_h,str(charge_method))
+            except: raise ValueError("Failed to add charges. Method '"+str(charge_method)+"' failed to be called as a function and as a known charge-method for OpenFF")
+        
+    if charged_mol is None: raise ValueError("Charge calculation failed for '"+namerep+"'")
+    Chem.Kekulize(charged_mol)
+    
+    for ai,a in enumerate(charged_mol.GetAtoms()):
+        a.SetIsAromatic(aromseq[ai])
+    return charged_mol
+
+
+# In[4]:
+
+
+def raw_dump(smiles,outf,molname=None):
+    ready_mol = processMolecule(str(smiles),name=molname, charge_method="gasteiger")
+    if molname is None: molname="Unnamed"
+
+    madefile=False
+    if type(outf)==str:
+        outf=open(outf,"w")
+        madefile=True
+    outf.write("START\n")
+    outf.write("; Name\n")
+    outf.write(str(molname)+"\n")
+    outf.write("; SMILES String\n")
+    outf.write(str(smiles)+"\n")
+    outf.write("; # Atoms\n")
+    outf.write(str(ready_mol.GetNumAtoms())+"\n")
+    outf.write("; # Bonds\n")
+    outf.write(str(ready_mol.GetNumBonds())+"\n")
+    
+    outf.write("; Atoms\n")
+    outf.write("; Index Element X Y Z Q Hyb Aromatic FormalQ\n")
+    
+    conf = ready_mol.GetConformer()
+    for ai,a in enumerate(ready_mol.GetAtoms()):
+        wstr=str(ai)+" "+ELEMENTS[a.GetAtomicNum()]+" "
+        pos = conf.GetAtomPosition(ai)
+        wstr+=str(pos.x)+" "+str(pos.y)+" "+str(pos.z)+" "
+        q=round(a.GetDoubleProp("PartialCharge"),3)
+        wstr+=str(q)+" "
+        wstr+=str(HYBRIDIZATION[str(a.GetHybridization())])+" "
+        wstr+=("1" if a.GetIsAromatic() else "0")+" "
+        wstr+=str(a.GetFormalCharge())+"\n"
+        outf.write(wstr)
+
+    outf.write("; Bonds\n")
+    outf.write("; Index At1 At2 2*Order\n")
+    for bi,b in enumerate(ready_mol.GetBonds()):
+        wstr=str(bi)+" "+str(b.GetBeginAtomIdx())+" "+str(b.GetEndAtomIdx())+" "
+        wstr+=str(BOND_ORDERS[b.GetBondType()])+"\n"
+        outf.write(wstr)
+    outf.write("END\n")
+    if madefile: outf.close()
+    return ready_mol
+
+
+# In[ ]:
+
+def get_args():
+    """Defines and parses command-line arguments."""
+    parser = argparse.ArgumentParser(
+        prog="smiles2umd",
+        description="Convert SMILES blocks into Univeral Molecular Description (UMD) files. This is can be converted into the quick-lookup Univeral Molecular Format (UMF). Run umfmaker for this",
+        epilog="Example: smiles2umd file.smi -c 12 -o output.umd "
+    )
+
+    # 1. Positional argument (Required)
+    parser.add_argument("input_file", help="Path to the input file")
+
+    # 2. Optional argument with a value (Default provided)
+    parser.add_argument("-c", "--cpus", type=int, default=1, 
+                        help="Number of CPUs to use (default: 1)")
+    
+    # 3. Optional argument with a value (Default provided)
+    parser.add_argument("-o", "--output", type=str, default="output.umd", 
+                        help="Output filename (default: output.umd)")
+    
+    # 3.5 Optional argument with a value (Default provided)
+    parser.add_argument("-e", "--error", type=str, default="error.log", 
+                        help="Error filename to write failed molecules (default: error.log)")
+    
+    
+    # 4. Segment number (optional argument)
+    parser.add_argument("-s", "--segment", type=int, default=-1, 
+                        help="(Re)run a specific cut in a multi-CPU run. You will usually not need this")
+    
+    # 5. Optional argument with a value (Default provided)
+    parser.add_argument("-b", "--batch_size", type=int, default=4096, 
+                        help="Number of SMILES to load into memory at once. (Default: 4096)")
+
+
+    # 6. Boolean flag (True if present, False if not)
+    parser.add_argument("-f", "--force-overwrite", action="store_true",  help="Overwrite existing UMD files (if present)")
+
+    return parser.parse_args()
+
+def main():
+    args = get_args()
+    smifile=args.input_file
+    cpus=int(args.cpus)
+    segment=int(args.segment)
+    errfile=args.error
+    bsize=args.batch_size
+    assert bsize>=cpus, "batch size must be greater than the number of CPUs used"
+    
+    outname=args.output
+    if outname.endswith(".umd"):
+        out_prefix=outname[:-4]
+    else:
+        out_prefix=outname
+        outname+=".umd"
+    
+    errlog=open(errfile,"w")
+    
+    def process_block(seg):
+        
+        if cpus>1:
+            o_filename=out_prefix+str(seg)+".umd"
+        else:
+            o_filename=outname
+        
+        outf=open(o_filename,"w")
+        smiload=SequentialSMILESLoader(smifile,attach_names=True)
+        while not smiload.ended:
+            smis,names=smiload.getNext(bsize,as_smiles=True)
+            for i in range(len(smis)):
+                if (cpus>1) and (i%cpus!=seg): continue
+                try:
+                    raw_dump(smis[i],outf,names[i])
+                except UndefinedStereochemistryError:
+                    errlog.write(names[i]+"\n")
+                    continue
+                except RadicalsNotSupportedError:
+                    errlog.write(names[i]+"\n")
+                    continue
+                except ValueError:
+                    errlog.write(names[i]+"\n")
+                    continue
+        outf.close()
+        return o_filename
+    
+    if segment>=0: process_block(segment)
+    else:
+        if cpus==1: process_block(0) # No parallelism
+        else:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=cpus) as executor:
+                written_files = list(executor.map(process_block,list(range(cpus))))
+                final_file=open(outname,"w")
+                for wf in written_files:
+                    rf=open(wf,"r")
+                    for l in rf: final_file.write(l)
+                    rf.close()
+                final_file.close()
+    errlog.close()
+
+if __name__ == "__main__": main()
+
+
+
