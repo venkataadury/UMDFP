@@ -106,22 +106,18 @@ public:
         }
         int num_formal_charges=0;
         for(int i=0;i<molecule.getNumAtoms();i++)        {
-            if(molecule.getAtom(i).getFormalCharge()!=0)            {
-                num_formal_charges++;
-                break;
-            }
+            int fchg=molecule.getAtom(i).getFormalCharge();
+            if(fchg!=0) num_formal_charges++;
         }
         if(num_formal_charges>0)
         {
-            out << "M  CHG  " << num_formal_charges << " "; // Line indicating the number of atoms with formal charges
+            out << "M  CHG  " << num_formal_charges << std::right; // Line indicating the number of atoms with formal charges
             for(int i=0;i<molecule.getNumAtoms();i++)
             {
                 int formal_charge = molecule.getAtom(i).getFormalCharge();
-                if(formal_charge!=0)                {
-                    out << std::setw(3) << i+1 << std::setw(4) << formal_charge << " "; // Atom ID and formal charge
-                }
+                if(formal_charge!=0) out << std::setw(4) << (i+1) << std::setw(4) << formal_charge; // Atom ID and formal charge
             }
-            out << "\n";
+            out << "\n" << std::left;
         }
         
         out << "M  END\n"; // End of molecule block for SDF format
