@@ -82,15 +82,17 @@ public:
     {
         // Comment with SMILES String
         
-        out << "\n" << molecule.getName() << "\n"; // Line 1: Molecule name
-        out << "  UMDBabel 0.1 2026\n"; // Line 2: Program information (can be modified in the future to include more specific information if needed)
-        out << molecule.getNumAtoms() << " " << molecule.getNumBonds() << " 0 0 0  0  0  0  0  0999 V2000\n"; // Line 3: Number of atoms, number of bonds, and other counts (the last three are set to 0 for simplicity)
+        //out << "\n" << molecule.getName() << "\n"; // Line 1: Molecule name
+        out << molecule.getName() << "\n";
+        out << "  UMDBabel0.120263D\n"; // Line 2: Program information (can be modified in the future to include more specific information if needed)
+        out << "\n";
+        out << molecule.getNumAtoms() << " " << molecule.getNumBonds() << " 0 0 0  0  0  0  0  0999 V3000\n"; // Line 3: Number of atoms, number of bonds, and other counts (the last three are set to 0 for simplicity)
 
         // Atom block
         for(int i=0;i<molecule.getNumAtoms();i++)
         {
             const UMDAtom& atom = molecule.getAtom(i);
-            out << std::fixed << std::setprecision(4) << std::setw(10) << atom.getX() << std::setw(10) << atom.getY() << std::setw(10) << atom.getZ() << " " << atom.getElement() << "  0  0  0  0  0  0  0  0  0  0  0  0\n"; // x, y, z, element symbol
+            out << std::fixed << std::setprecision(4) << std::setw(10) << atom.getX() << std::setw(10) << atom.getY() << std::setw(10) << atom.getZ() << " " << std::left << std::setw(2) << atom.getElement() << "  0  0  0  0  0  0  0  0  0  0  0  0\n"; // x, y, z, element symbol
         }
 
         // Bond block
@@ -98,9 +100,9 @@ public:
         {
             const UMDBond& bond = molecule.getBond(i);
             int btype= bond.getBondType();
-            if(molecule.getAtom(bond.getAtom1ID()).getData().aromatic && molecule.getAtom(bond.getAtom2ID()).getData().aromatic) btype=4; // Set bond type to aromatic if both atoms are aromatic
+            if(molecule.getAtom(bond.getAtom1ID()).getData().aromatic && molecule.getAtom(bond.getAtom2ID()).getData().aromatic) btype=3; // Set bond type to aromatic if both atoms are aromatic
 
-            out << std::setw(3) << bond.getAtom1ID()+1 << std::setw(3) << bond.getAtom2ID()+1 << std::setw(3) << btype << "\n"; // Atom1 ID, atom2 ID, bond type
+            out << std::setw(3) << bond.getAtom1ID()+1 << std::setw(3) << bond.getAtom2ID()+1 << std::setw(3) << ((btype%2==1)?"4":std::to_string(btype/2)) << "\n"; // Atom1 ID, atom2 ID, bond type
         }
         int num_formal_charges=0;
         for(int i=0;i<molecule.getNumAtoms();i++)        {
