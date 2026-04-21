@@ -84,7 +84,7 @@ public:
         
         //out << "\n" << molecule.getName() << "\n"; // Line 1: Molecule name
         out << molecule.getName() << "\n";
-        out << "  UMDBabel0.120263D\n"; // Line 2: Program information (can be modified in the future to include more specific information if needed)
+        out << "  UMDBabel0.12026   3D\n"; // Line 2: Program information (can be modified in the future to include more specific information if needed)
         out << "\n";
         out << molecule.getNumAtoms() << " " << molecule.getNumBonds() << " 0 0 0  0  0  0  0  0999 V3000\n"; // Line 3: Number of atoms, number of bonds, and other counts (the last three are set to 0 for simplicity)
 
