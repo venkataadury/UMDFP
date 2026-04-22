@@ -6,12 +6,12 @@
 
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -g -O3 -I.
+CXXFLAGS = -g -O3 -I. -std=c++17
 LDFLAGS = 
 
 # Source files and corresponding executables
-SOURCES = UMDcompressor.cpp UMFParser.cpp UMFQuery.cpp UMFChecker.cpp
-EXECUTABLES = umfgen umfparser-live umfparser umfchecker
+SOURCES = UMDcompressor.cpp UMFParser.cpp UMFQuery.cpp UMFChecker.cpp UMDDumper.cpp
+EXECUTABLES = umfgen umfparser-live umfparser umfchecker umfdump
 
 # Object files
 OBJECTS = $(SOURCES:.cpp=.o)
@@ -27,6 +27,8 @@ umfparser-live: UMFParser.o
 umfparser: UMFQuery.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 umfchecker: UMFChecker.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+umfdump: UMFDumper.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 # Rule to compile source files into object files
