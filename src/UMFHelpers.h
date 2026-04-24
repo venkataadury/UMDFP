@@ -2,6 +2,7 @@
 #define INCLUDED_UMDFP_HELPERS_H
 #include "UMDFP.h"
 #include <functional>
+#include <sstream>
 
 static inline bool AtomIsHydrogen(const UMDAtom& atom) {return atom.getElement()=="H";}
 static inline bool AtomIsCarbon(const UMDAtom& atom) {return atom.getElement()=="C";}
@@ -79,8 +80,14 @@ static std::vector<std::pair<int,int>> generateDFSTraversalOrder(const UMDMolecu
     {
         visited[current]=true;
         traversal_order.push_back({current, parent});
-        for(int neighbor : getNeighborIndices(molecule, current, include_hydrogens))
+        std::vector<int> neighbors=getNeighborIndices(molecule, current, include_hydrogens);
+        std::vector<int> neighbor_order;
+        for(int neighbor : neighbors) neighbor_order.push_back(computeNumNeighbors(molecule, neighbor,include_hydrogens));
+        std::vector<size_t> srt=argsort(neighbor_order);
+        
+        for(int neighbor_idx : srt)
         {
+            int neighbor=neighbors[neighbor_idx];
             if(!visited[neighbor]) dfs(neighbor, current);
         }
     };
