@@ -10,7 +10,7 @@ CXXFLAGS = -g -O3 -I. -std=c++17
 LDFLAGS = 
 
 # Source files and corresponding executables
-SOURCES = UMDcompressor.cpp UMFParser.cpp UMFQuery.cpp UMFChecker.cpp UMDDumper.cpp
+SOURCES = UMDcompressor.cpp UMFParser.cpp UMFQuery.cpp UMFChecker.cpp UMFDumper.cpp
 EXECUTABLES = umfgen umfparser-live umfparser umfchecker umfdump
 
 # Object files
