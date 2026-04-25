@@ -6,7 +6,7 @@ int main(int argc, char** argv)
 {
     if(argc<2)
     {
-        std::cerr << "Usage: " << argv[0] << " <UMF file> [<Output file>] [-f Format (mol2/sdf/pdbqt)] [-s (separate files?)]\n";
+        std::cerr << "Usage: " << argv[0] << " <UMF file> [<Output file>] [-f Format (mol2/sdf/pdbqt/smi)] [-s (separate files?)]\n";
         return 1;
     }
     std::string umf_file = argv[1];

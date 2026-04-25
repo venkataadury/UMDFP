@@ -58,6 +58,7 @@ int main(int argc, char** argv)
     if(output_fmt=="mol2") formatter = new Mol2Format();
     else if(output_fmt=="sdf") formatter = new SDFFormat();
     else if(output_fmt=="pdbqt") formatter = new PDBQTFormat();
+    else if(output_fmt=="smi") formatter=new SMILESFormat();
     else
     {
         std::cerr << "Unsupported output format: " << output_fmt << ". Supported formats are: mol2, sdf, pdbqt\n";
