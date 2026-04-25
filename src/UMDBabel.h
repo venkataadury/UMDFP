@@ -230,5 +230,11 @@ public:
     }
 };
 
+class SMILESFormat : public GenericMoleculeFileFormat
+{
+public:
+    SMILESFormat() {}
+    std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out, const std::string& charge_method="none") const override {out << molecule.getSMILES().getData() << " " << molecule.getName() << "\n"; return out;}
+};
 
 #endif
