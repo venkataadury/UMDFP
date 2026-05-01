@@ -187,14 +187,15 @@ Pre-built binaries for Linux are also available in the `bin/` directory.
 |--------|-----------|-------|
 | Tripos Mol2 | `.mol2` | Full atom-type and charge annotation |
 | SDF / MDL Molfile | `.sdf` | Includes formal charge (`M  CHG`) and SMILES tag |
-| PDBQT | `.pdbqt` | AutoDock-compatible; includes `ROOT`/`BRANCH`/`TORSDOF` records |
+| PDBQT (Beta) | `.pdbqt` | AutoDock-compatible; includes `ROOT`/`BRANCH`/`TORSDOF` records |
 | SMILES | `.smi` | One line per molecule: `<SMILES> <name>` |
 
 ---
 
 ## Supported Elements
 
-H, Li, Be, B, C, N, O, F, Mg, Si, P, S, Cl, Fe, Se, Br, Zn, Pd, I, Pt.
+H, Li, Be, B, C, N, O, F, Mg, Si, P, S, Cl, Fe, Se, Br, Zn, Pd, I, Pt.\\
+**Note:** Beyond the traditional organic C,N,O,S,P,H support for other elements may be limited
 
 ---
 
