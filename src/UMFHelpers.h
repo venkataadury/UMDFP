@@ -131,5 +131,21 @@ static std::pair<std::vector<bool>,std::vector<std::vector<int>>> computeAtomRin
     return {in_ring, rings};
 }
 
+static std::pair<std::string,file_pointer> getQueryByIndex(const std::string& pointer_filename, unsigned long long index)
+{
+    FILE* pointer_file = fopen(pointer_filename.c_str(), "rb");
+    if(!pointer_file)
+    {
+        std::cerr << "Error opening pointer file for reading: " << pointer_filename << std::endl;
+        throw NoPointerFileFoundException();
+    }
+    fseek(pointer_file, index * (POINTER_NAME_SIZE+sizeof(file_pointer)), SEEK_SET);
+    char name_buffer[POINTER_NAME_SIZE];
+    fread(name_buffer, sizeof(char), POINTER_NAME_SIZE, pointer_file);
+    file_pointer position;
+    fread(&position, sizeof(file_pointer), 1, pointer_file);
+    fclose(pointer_file);
+    return {std::string(name_buffer), position};
+}
 
 #endif

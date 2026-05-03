@@ -15,6 +15,7 @@
 #include <cassert>
 
 typedef fpos_t file_pointer;
+#define POINTER_NAME_SIZE 64
 
 // Add a random 32-byte signature to the start of the file (not once per each molecule)
 #define UMF_SIGNATURE "UMFe63c74b084c7fb08318c3c544966f" // 32 bytes
@@ -58,6 +59,7 @@ public:
     inline const unsigned char* getData() const { return data; }
     inline size_t getLength() const { return length; }
     inline void writeToFile(FILE* file) const {fwrite(data, sizeof(unsigned char), length, file);}
+    inline void dumpToStream(std::ostream& os) const {os.write((char*)data, length);}
 
     ByteString& operator=(const ByteString& other)
     {
@@ -802,12 +804,12 @@ static void buildUMFPointerFile(const std::string& umf_filename, std::string poi
         std::cerr << "Error opening pointer file for writing: " << pointer_filename << std::endl;
         throw std::runtime_error("Could not open pointer file");
     }
-    char name_buffer[64];
+    char name_buffer[POINTER_NAME_SIZE];
     for(size_t i=0;i<sorted_indices.size();i++)
     {
         strcpy(name_buffer, molecule_names[sorted_indices[i]].c_str());
-        name_buffer[63]='\0'; // Ensure null termination and limit to 63 characters
-        pointer_file.write(name_buffer, sizeof(char)*64); // Write fixed-size name (64 bytes)
+        name_buffer[POINTER_NAME_SIZE-1]='\0'; // Ensure null termination and limit to POINTER_NAME_SIZE-1 characters
+        pointer_file.write(name_buffer, sizeof(char)*POINTER_NAME_SIZE); // Write fixed-size name (POINTER_NAME_SIZE bytes)
         pointer_file.write((char*)&molecule_positions[sorted_indices[i]], sizeof(file_pointer)); // Write corresponding file position (8 bytes on 64-bit systems)
     }
     pointer_file.flush();
