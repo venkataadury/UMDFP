@@ -5,3 +5,8 @@ To be able to compile these modules, you will need to install development files 
 conda activate my-env
 conda install -c conda-forge librdkit-dev eigen libboost-devel
 ```
+
+If these packages installed correctly, you should be able to simply run
+```
+./autobuild.sh
+```
