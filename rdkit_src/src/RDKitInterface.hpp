@@ -198,7 +198,9 @@ static void buildUMFFingerprintFile(const std::string& umf_filename, std::string
 
 template<int N> static void _blockSimilarity(const CPPBitVector<N>* batch, const CPPBitVector<N>& query_fp, float threshold, std::vector<std::pair<unsigned long long, float>>& ret, int batch_filling, const std::string& similarity_metric="tanimoto", unsigned long long total_index=0)
 {
-    //#pragma omp parallel for
+    #ifdef ENABLE_CPU_PARALLELISM
+    #pragma omp parallel for
+    #endif
     for(size_t i=0;i<batch_filling;i++)
     {
         float similarity;

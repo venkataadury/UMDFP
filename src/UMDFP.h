@@ -14,6 +14,10 @@
 #include <cmath>
 #include <cassert>
 
+#ifdef ENABLE_CPU_PARALLELISM
+#include <omp.h>
+#endif
+
 typedef fpos_t file_pointer;
 #define POINTER_NAME_SIZE 64
 
