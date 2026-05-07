@@ -110,7 +110,7 @@ int main(int argc, char** argv)
     }
     else
     {
-        std::cerr << "No names provided in stdin. Processing all molecules in template file: " << template_file << " in order\n";
+        std::cerr << "No names provided in stdin (use '-e' to do this). Processing all molecules in template file: " << template_file << " in order\n";
         for(auto& pair : template_molecules)
         {
             const std::string& name = pair.first;
