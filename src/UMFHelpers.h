@@ -3,6 +3,7 @@
 #include "UMDFP.h"
 #include <functional>
 #include <sstream>
+#include <map>
 
 static inline bool AtomIsHydrogen(const UMDAtom& atom) {return atom.getElement()=="H";}
 static inline bool AtomIsCarbon(const UMDAtom& atom) {return atom.getElement()=="C";}
@@ -146,6 +147,21 @@ static std::pair<std::string,file_pointer> getQueryByIndex(const std::string& po
     fread(&position, sizeof(file_pointer), 1, pointer_file);
     fclose(pointer_file);
     return {std::string(name_buffer), position};
+}
+
+static std::map<std::string, UMDMolecule> drainUMDReader(UMDReader& reader)
+{
+    std::map<std::string, UMDMolecule> molecules;
+    while(true)
+    {
+        try
+        {
+            UMDMolecule mol = reader.getNextMolecule();
+            molecules[mol.getName()]=mol;
+        }
+        catch(const MoleculeDataEndedException& e) {break;}
+    }
+    return molecules;
 }
 
 #endif

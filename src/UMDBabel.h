@@ -9,6 +9,8 @@ class GenericMoleculeFileFormat
 public:
     GenericMoleculeFileFormat() {}
     virtual std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out, const std::string& charge_method="none") const = 0;
+    virtual std::vector<std::vector<float>> readCoordinates(std::istream& in) const {return std::vector<std::vector<float>>();} // Default implementation returns an empty vector, can be overridden by formats that support reading coordinates
+    inline virtual bool hasCoordinates() const {return false;} // Default implementation returns false, can be overridden by formats that support reading coordinates
 };
 
 class Mol2Format : public GenericMoleculeFileFormat
@@ -72,6 +74,29 @@ public:
 
     inline void setResidueName(const std::string& resname) {this->resname = resname;}
     inline std::string getResidueName() const {return resname;}
+
+    std::vector<std::vector<float>> readCoordinates(std::istream& in) const override
+    {
+        std::vector<std::vector<float>> coordinates;
+        std::string line;
+        // Read until we find the @<TRIPOS>ATOM section
+        while(std::getline(in, line))
+        {
+            if(line.find("@<TRIPOS>ATOM")!=std::string::npos) break;
+        }
+        // Read atom lines until we reach the next section
+        while(std::getline(in, line))
+        {
+            if(line.empty()) continue;
+            if(line[0]=='@') break; // Next section
+            std::istringstream iss(line);
+            int atom_id; std::string atom_name; float x, y, z;
+            if(!(iss >> atom_id >> atom_name >> x >> y >> z)) continue; // Skip lines that don't match the expected format
+            coordinates.push_back({x, y, z});
+        }
+        return coordinates;
+    }
+    inline bool hasCoordinates() const override {return true;}
 };
 
 class SDFFormat : public GenericMoleculeFileFormat
@@ -92,7 +117,7 @@ public:
         for(int i=0;i<molecule.getNumAtoms();i++)
         {
             const UMDAtom& atom = molecule.getAtom(i);
-            out << std::fixed << std::setprecision(4) << std::setw(10) << atom.getX() << std::setw(10) << atom.getY() << std::setw(10) << atom.getZ() << " " << std::left << std::setw(2) << atom.getElement() << "  0  0  0  0  0  0  0  0  0  0  0  0\n"; // x, y, z, element symbol
+            out << std::fixed << std::setprecision(4) << std::right << std::setw(10) << atom.getX() << std::setw(10) << atom.getY() << std::setw(10) << atom.getZ() << " " << std::left << std::setw(2) << atom.getElement() << "  0  0  0  0  0  0  0  0  0  0  0  0\n"; // x, y, z, element symbol
         }
 
         // Bond block
@@ -126,6 +151,7 @@ public:
         out << "$$$$\n"; // End of molecule block
         return out;
     }
+    inline bool hasCoordinates() const override {return true;}
 };
 
 class PDBQTFormat : public GenericMoleculeFileFormat
@@ -228,6 +254,7 @@ public:
         _out << remarks.str() << out.str(); 
         return _out;
     }
+    inline bool hasCoordinates() const override {return true;}
 };
 
 class SMILESFormat : public GenericMoleculeFileFormat
@@ -235,6 +262,8 @@ class SMILESFormat : public GenericMoleculeFileFormat
 public:
     SMILESFormat() {}
     std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out, const std::string& charge_method="none") const override {out << molecule.getSMILES().getData() << " " << molecule.getName() << "\n"; return out;}
+    std::vector<std::vector<float>> readCoordinates(std::istream& in) const override {return std::vector<std::vector<float>>();} // SMILES format does not contain coordinate information, so we return an empty vector
+    inline bool hasCoordinates() const override {return false;}
 };
 
 class UMDFormat : public GenericMoleculeFileFormat
@@ -263,6 +292,74 @@ public:
         out << "END\n";
         return out;
     }
+    std::vector<std::vector<float>> readCoordinates(std::istream& in) const override
+    {
+        std::vector<std::vector<float>> coordinates;
+        std::string line;
+        // Read until we find the START line
+        while(std::getline(in, line))
+        {
+            if(line.find("START")!=std::string::npos) break;
+        }
+        // Read number of atoms and bonds
+        int natoms=-1, nbonds=-1;
+        bool read_name=false, read_smiles=false;
+        while(std::getline(in, line))
+        {
+            if(line.empty()) continue;
+            if(line[0]==';') continue; // Skip comment lines
+            if(!read_name) {read_name=true; continue;} // Skip name line
+            else if(!read_smiles) {read_smiles=true; continue;} // Skip SMILES line
+            else if(natoms==-1) natoms = std::stoi(line);
+            else if(nbonds==-1) {nbonds = std::stoi(line); break;}
+        }
+        // Read atom lines until we reach the bond block
+        while(std::getline(in, line))
+        {
+            if(line.empty()) continue;
+            if(line[0]==';') continue; // Skip comment lines
+            if(line.find("END")!=std::string::npos) throw std::runtime_error("Unexpected END line while reading coordinates");
+            if(coordinates.size()>=natoms) break; // If we have read all atoms, break out of the loop to avoid reading bond lines as atom lines
+            std::istringstream iss(line);
+            int index; std::string element; float x, y, z; float charge; unsigned short int hyb; bool aromatic; short int formal_charge;
+            if(!(iss >> index >> element >> x >> y >> z >> charge >> hyb >> aromatic >> formal_charge)) continue; // Skip lines that don't match the expected format
+            coordinates.push_back({x, y, z});
+        }
+        return coordinates;
+    }
+    inline bool hasCoordinates() const override {return true;}
 };
+
+
+static bool loadCoordinatesFromFormat(UMDMolecule& molecule, std::istream& crdfile, GenericMoleculeFileFormat& formatter)
+{
+    if(!formatter.hasCoordinates()) return false;
+    std::vector<std::vector<float>> coords = formatter.readCoordinates(crdfile);
+    
+    if(coords.size()!=molecule.getNumAtoms())
+    {
+        // Indicates bad match between coordinate file and loaded molecule. Throw an error in this case since this is likely a user error
+        std::cerr << "Error: Number of coordinate sets in file does not match number of atoms in molecule" << std::endl;
+        return false;
+    }
+    for(int i=0;i<molecule.getNumAtoms();i++)
+    {
+        molecule.getAtom(i).getData().x = coords[i][0];
+        molecule.getAtom(i).getData().y = coords[i][1];
+        molecule.getAtom(i).getData().z = coords[i][2];
+    }
+    return true;
+}
+static bool loadCoordinatesFromFormat(UMDMolecule& molecule, const std::string& filename, GenericMoleculeFileFormat& formatter)
+{
+    if(!formatter.hasCoordinates()) return false;
+    std::ifstream crdfile(filename);
+    if(!crdfile)
+    {
+        std::cerr << "Error opening coordinate file: " << filename << std::endl;
+        return false;
+    }
+    return loadCoordinatesFromFormat(molecule, crdfile, formatter);
+}
 
 #endif

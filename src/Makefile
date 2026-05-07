@@ -3,6 +3,8 @@
 # - UMFParser.cpp to create the executable 'umfparser-live'
 # - UMFQuery.cpp to create the executable 'umfparser'
 # - UMFChecker.cpp to create the executable 'umfchecker'
+# - UMFDumper.cpp to create the executable 'umfdump'
+# - UMDBasedConverter.cpp to create the executable 'umd-fmtconv'
 
 # Compiler and flags
 CXX = g++
@@ -10,8 +12,8 @@ CXXFLAGS = -g -O3 -I. -std=c++17
 LDFLAGS = 
 
 # Source files and corresponding executables
-SOURCES = UMDcompressor.cpp UMFParser.cpp UMFQuery.cpp UMFChecker.cpp UMFDumper.cpp
-EXECUTABLES = umfgen umfparser-live umfparser umfchecker umfdump
+SOURCES = UMDcompressor.cpp UMFParser.cpp UMFQuery.cpp UMFChecker.cpp UMFDumper.cpp UMDBasedConverter.cpp
+EXECUTABLES = umfgen umfparser-live umfparser umfchecker umfdump umd-fmtconv
 
 # Object files
 OBJECTS = $(SOURCES:.cpp=.o)
@@ -29,6 +31,8 @@ umfparser: UMFQuery.o
 umfchecker: UMFChecker.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 umfdump: UMFDumper.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+umd-fmtconv: UMDBasedConverter.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 # Rule to compile source files into object files

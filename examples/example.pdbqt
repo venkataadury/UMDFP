@@ -1,0 +1,27 @@
+REMARK Name: example
+REMARK SMILES: c1ccccc1C(=O)C
+REMARK Net charge: 0
+REMARK Charge method: GASTEIGER
+REMARK RING 11 (C) 9 (C) 7 (C) 5 (C) 3 (C) 1 (C) 
+ROOT
+ATOM      1  C   UNL     0      -0.239  -0.929   0.364  0.00  0.00    -0.051 A  
+ATOM      2  H   UNL     0       0.447  -1.716   0.663  0.00  0.00    +0.063 H  
+ATOM      3  C   UNL     0      -1.611  -1.172   0.475  0.00  0.00    -0.062 A  
+ATOM      4  H   UNL     0      -1.965  -2.129   0.851  0.00  0.00    +0.062 H  
+ATOM      5  C   UNL     0      -2.529  -0.191   0.103  0.00  0.00    -0.062 A  
+ATOM      6  H   UNL     0      -3.596  -0.383   0.190  0.00  0.00    +0.062 H  
+ATOM      7  C   UNL     0      -2.080   1.036  -0.380  0.00  0.00    -0.062 A  
+ATOM      8  H   UNL     0      -2.794   1.803  -0.670  0.00  0.00    +0.062 H  
+ATOM      9  C   UNL     0      -0.711   1.283  -0.491  0.00  0.00    -0.051 A  
+ATOM     10  H   UNL     0      -0.371   2.246  -0.870  0.00  0.00    +0.063 H  
+ATOM     11  C   UNL     0       0.220   0.302  -0.120  0.00  0.00    +0.017 A  
+ENDROOT
+BRANCH   12  0
+ATOM     12  C   UNL     0       1.674   0.613  -0.258  0.00  0.00    +0.159 C  
+ATOM     13  O   UNL     0       2.030   1.708  -0.688  0.00  0.00    -0.295 O  
+ATOM     14  C   UNL     0       2.684  -0.432   0.138  0.00  0.00    -0.001 C  
+ATOM     15  H   UNL     0       2.566  -1.327  -0.479  0.00  0.00    +0.031 H  
+ATOM     16  H   UNL     0       2.585  -0.673   1.199  0.00  0.00    +0.031 H  
+ATOM     17  H   UNL     0       3.692  -0.038  -0.027  0.00  0.00    +0.031 H  
+ENDBRANCH   12  0
+TORSDOF 1
