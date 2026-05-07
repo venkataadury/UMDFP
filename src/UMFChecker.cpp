@@ -32,6 +32,7 @@ int main(int argc, char** argv)
     std::cout << "First molecule name: " << first_mol.getName() << std::endl;
     first_mol.summary();
     std::cout << "\n\n";
+    std::cout << "NOTE: UMFChecker only checks for file corruption/incomplete writes.\nIt does not check for chemical validity of the molecules (e.g., valence errors, unrealistic bond lengths, etc.), so even if the file passes this check, it may still contain chemically invalid molecules. For a more thorough check of chemical validity, consider using a cheminformatics toolkit like RDKit or Open Babel to read through the UMF file and validate each molecule.\n";
 
     std::cout << "Testing all molecules ... "; std::cout.flush();
     long long total_mols=1; // Start at 1 since we already read the first molecule

@@ -6,7 +6,7 @@ int main(int argc, char** argv)
 {
     if(argc<2)
     {
-        std::cerr << "Usage: " << argv[0] << " <UMF file> [<Output file>] [-f Format (mol2/sdf/pdbqt/smi)] [-s (separate files?)]\n";
+        std::cerr << "Usage: " << argv[0] << " <UMF file> [<Output file>] [-f Format (mol2/sdf/pdbqt/smi/umd)] [-s (separate files?)]\n";
         return 1;
     }
     std::string umf_file = argv[1];
@@ -33,9 +33,10 @@ int main(int argc, char** argv)
     else if(output_fmt=="sdf") formatter = new SDFFormat();
     else if(output_fmt=="pdbqt") formatter = new PDBQTFormat();
     else if(output_fmt=="smi") formatter=new SMILESFormat();
+    else if(output_fmt=="umd") formatter=new UMDFormat();
     else
     {
-        std::cerr << "Unsupported output format: " << output_fmt << ". Supported formats are: mol2, sdf, pdbqt\n";
+        std::cerr << "Unsupported output format: " << output_fmt << ". Supported formats are: mol2, sdf, pdbqt, smi, umd\n";
         return 1;
     }
 

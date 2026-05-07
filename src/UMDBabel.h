@@ -237,4 +237,32 @@ public:
     std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out, const std::string& charge_method="none") const override {out << molecule.getSMILES().getData() << " " << molecule.getName() << "\n"; return out;}
 };
 
+class UMDFormat : public GenericMoleculeFileFormat
+{
+public:
+    UMDFormat() {}
+    std::ostream& formatMolecule(const UMDMolecule& molecule, std::ostream& out, const std::string& charge_method="none") const override
+    {
+        out << "START\n";
+        out << molecule.getName() << "\n";
+        out << ((char*)molecule.getSMILES().getData()) << "\n";
+        out << molecule.getNumAtoms() << "\n";
+        out << molecule.getNumBonds() << "\n";
+        out << "; Index Element X Y Z Q Hyb Aromatic FormalCharge\n";
+        for(int i=0;i<molecule.getNumAtoms();i++)
+        {
+            const UMDAtom& atom = molecule.getAtom(i);
+            out << i << " " << atom.getElement() << " " << atom.getX() << " " << atom.getY() << " " << atom.getZ() << " " << atom.getCharge() << " " << atom.getHybridization() << " " << atom.isAromatic() << " " << atom.getFormalCharge() << "\n";
+        }
+        for(int i=0;i<molecule.getNumBonds();i++)
+        {
+            const UMDBond& bond = molecule.getBond(i);
+            out << i << " " << bond.getAtom1ID() << " " << bond.getAtom2ID() << " " << bond.getBondType() << "\n";
+        }
+        //if(molecule.extras.getLength()>0) out.write(molecule.extras.getData(), sizeof(char)*molecule.extras.getLength());
+        out << "END\n";
+        return out;
+    }
+};
+
 #endif
