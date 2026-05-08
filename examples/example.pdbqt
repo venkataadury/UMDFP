@@ -2,6 +2,7 @@ REMARK Name: example
 REMARK SMILES: c1ccccc1C(=O)C
 REMARK Net charge: 0
 REMARK Charge method: GASTEIGER
+REMARK AtomSequence 0 9 1 10 2 11 3 12 4 13 5 6 7 8 14 15 16 
 REMARK RING 11 (C) 9 (C) 7 (C) 5 (C) 3 (C) 1 (C) 
 ROOT
 ATOM      1  C   UNL     0      -0.239  -0.929   0.364  0.00  0.00    -0.051 A  

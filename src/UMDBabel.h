@@ -177,6 +177,7 @@ public:
         std::vector<bool> parent_list(molecule.getNumAtoms(), false);
         std::vector<std::string> last_branch={"ROOT"};
         std::string branch_name,atom_type;
+        std::vector<int> written_sequence;
         int torsdof=0;
         
 
@@ -234,6 +235,7 @@ public:
             atom_line[255]='\0'; // Ensure null termination
             out << atom_line; // Atom ID, atom type, x, y, z, charge
             written_index[atom_index]=written_count+1;
+            written_sequence.push_back(atom_index);
             written_count++;
         }
         while(!last_branch.empty())
@@ -242,6 +244,8 @@ public:
             last_branch.pop_back();
         }
         out << "TORSDOF " << torsdof << "\n"; // Number of rotatable bonds (this is a simplification, as it assumes that every branch point corresponds to a rotatable bond, which may not always be the case, but can be modified in the future to include a more accurate calculation of rotatable bonds if needed)
+        remarks << "REMARK AtomSequence ";
+        for(int aind : written_sequence) remarks << aind << " "; remarks << "\n";
         for(const std::vector<int>& ring : rings)
         {
             remarks << "REMARK RING ";
@@ -254,7 +258,64 @@ public:
         _out << remarks.str() << out.str(); 
         return _out;
     }
+    
     inline bool hasCoordinates() const override {return true;}
+    std::vector<std::vector<float>> readCoordinates(std::istream& in) const override
+    {
+        // PDBQT format does not have a standard way to indicate the end of the coordinate section, so we will read until we reach a line that does not start with "ATOM" or "ROOT" or "BRANCH" or "END"
+        std::vector<std::vector<float>> coordinates;
+        std::string line;
+        std::vector<int> atom_reorder;
+        while(std::getline(in, line))
+        {
+            if(line.empty()) continue;
+            if(line.find("REMARK AtomSequence")==0)
+            {
+                std::istringstream iss(line.substr(20)); // Extract the part of the line after "REMARK AtomSequence "
+                int atom_index;
+                while(iss >> atom_index) atom_reorder.push_back(atom_index); // Store the atom indices in the order they are written in the PDBQT file (subtract 1 to convert from 1-based to 0-based indexing)
+                continue;
+            }
+            if(line.find("ATOM")!=0) continue; // Skip non-atom lines
+            std::istringstream iss(line);
+            char record_name[7], atom_name[5], res_name[5], element_symbol[5];
+            int atom_id, res_id;
+            float x=1.0, y=1.0, z=1.0, occupancy, temp_factor, charge;
+            std::cout << line.c_str() << "\n";
+            try {sscanf(line.c_str(), "%s      %d  %4s   %3s     %d      %f  %f   %f  %f  %f    %f %3s",&record_name, &atom_id, atom_name, res_name, &res_id, &x, &y, &z, &occupancy, &temp_factor, &charge, element_symbol);}
+            catch(...)
+            {
+                std::cerr << "Warning: Failed to parse line in PDBQT file while reading coordinates: " << line << "\n";
+                std::cerr << "Bad line: " << line << "\n";
+                continue;
+            }
+            coordinates.push_back({x, y, z});
+        }
+        // Reorder the coordinates according to the order of atoms in the original molecule (if the REMARK AtomSequence line was present)
+        if(atom_reorder.size()==coordinates.size())
+        {
+            std::vector<std::vector<float>> reordered_coordinates(coordinates.size());
+            for(size_t i=0;i<atom_reorder.size();i++)
+            {
+                int original_index = atom_reorder[i];
+                if(original_index<0 || original_index>=coordinates.size())
+                {
+                    std::cerr << "Warning: Atom index in REMARK AtomSequence line is out of bounds: " << original_index << "\n";
+                    std::cerr << "Skipping reordering of coordinates\n";
+                    return coordinates; // Return the coordinates in the order they were read from the file if there is an error with the REMARK AtomSequence line
+                }
+                reordered_coordinates[original_index] = coordinates[i];
+            }
+            coordinates = reordered_coordinates;
+        }
+        else
+        {
+            if(!atom_reorder.empty()) std::cerr << "Warning: REMARK AtomSequence line was found but the number of atom indices does not match the number of atoms, returning coordinates in the order they were read from the file\n";
+            else std::cerr << "Warning: REMARK AtomSequence line was not found, returning coordinates in the order they were read from the file\n";
+            std::cerr << "If this PDBQt file was not written from UMD format, the atom ordering might not match. Please make sure that you manually ensure the same order of atoms in the PDBQt and any template molecule loaded into UMD format.\n";
+        }
+        return coordinates;
+    }
 };
 
 class SMILESFormat : public GenericMoleculeFileFormat
@@ -333,7 +394,7 @@ public:
 
 static bool loadCoordinatesFromFormat(UMDMolecule& molecule, std::istream& crdfile, GenericMoleculeFileFormat& formatter)
 {
-    if(!formatter.hasCoordinates()) return false;
+    if(!formatter.hasCoordinates()) {std::cerr << "Error: Formatter does not support coordinates" << std::endl; return false;}
     std::vector<std::vector<float>> coords = formatter.readCoordinates(crdfile);
     
     if(coords.size()!=molecule.getNumAtoms())
