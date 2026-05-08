@@ -6,7 +6,7 @@ int main(int argc, char** argv)
 {
     if(argc<2)
     {
-        std::cerr << "Usage: " << argv[0] << " <UMF file> [<Output file>] [-f Format (mol2/sdf/pdbqt/smi/umd)] [-s (separate files?)]\n";
+        std::cerr << "Usage: " << argv[0] << " <UMF file> [<Output file>] [-f Format (mol2/sdf/pdbqt/smi/umd)] [-s (separate files?)] [-noh (no hydrogens?)]\n";
         return 1;
     }
     std::string umf_file = argv[1];
@@ -15,11 +15,13 @@ int main(int argc, char** argv)
     std::string output_fmt="mol2";
     
     bool split=false;
+    bool write_H=true;
     for(int i=3;i<argc;i++)
     {
         std::string arg = argv[i];
         if(arg=="-f" && i+1<argc) output_fmt = argv[++i];
         else if(arg=="-s") split=true;
+        else if(arg=="-noh") write_H=false;
         else
         {   
             std::cerr << "Unknown argument: " << arg << "\n";
@@ -29,11 +31,15 @@ int main(int argc, char** argv)
     }
 
     GenericMoleculeFileFormat* formatter;
-    if(output_fmt=="mol2") formatter = new Mol2Format();
-    else if(output_fmt=="sdf") formatter = new SDFFormat();
-    else if(output_fmt=="pdbqt") formatter = new PDBQTFormat();
-    else if(output_fmt=="smi") formatter=new SMILESFormat();
-    else if(output_fmt=="umd") formatter=new UMDFormat();
+    if(output_fmt=="mol2") formatter = new Mol2Format(write_H);
+    else if(output_fmt=="sdf") formatter = new SDFFormat(write_H);
+    else if(output_fmt=="pdbqt") formatter = new PDBQTFormat(write_H);
+    else if(output_fmt=="smi") formatter=new SMILESFormat(); // SMILES format can never have explicit hydrogens, so we ignore the write_H flag if the user specified smi as the output format
+    else if(output_fmt=="umd")
+    {
+        formatter=new UMDFormat(); // UMD Format must always have hydrogens
+        if(!write_H) std::cerr << "Warning: UMD format must always include hydrogens. The -noh flag is ignored.\n";
+    }
     else
     {
         std::cerr << "Unsupported output format: " << output_fmt << ". Supported formats are: mol2, sdf, pdbqt, smi, umd\n";
