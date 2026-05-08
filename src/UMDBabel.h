@@ -306,7 +306,7 @@ public:
             int atom_id, res_id;
             float x=1.0, y=1.0, z=1.0, occupancy, temp_factor, charge;
             std::cout << line.c_str() << "\n";
-            try {sscanf(line.c_str(), "%6s      %d  %4s   %3s     %d      %f  %f   %f  %f  %f    %f %3s",&record_name, &atom_id, atom_name, res_name, &res_id, &x, &y, &z, &occupancy, &temp_factor, &charge, element_symbol);}
+            try {sscanf(line.c_str(), "%6s      %d  %4s   %3s     %d      %f  %f   %f  %f  %f    %f %3s",record_name, &atom_id, atom_name, res_name, &res_id, &x, &y, &z, &occupancy, &temp_factor, &charge, element_symbol);}
             catch(...)
             {
                 std::cerr << "Warning: Failed to parse line in PDBQT file while reading coordinates: " << line << "\n";
