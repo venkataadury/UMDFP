@@ -200,6 +200,7 @@ public:
         
         std::vector<bool> parent_list(molecule.getNumAtoms(), false);
         std::vector<std::string> last_branch={"ROOT"};
+        std::vector<std::vector<int>> branch_members; branch_members.push_back({}); // Start with the root branch containing the first atom (index 0)
         std::string branch_name,atom_type;
         std::vector<int> written_sequence;
         int torsdof=0;
@@ -212,7 +213,7 @@ public:
         {
             const UMDAtom& atom = molecule.getAtom(atom_index);
             if(AtomIsHydrogen(atom) && !write_H) continue; // Skip hydrogens if write_H is false
-            if(parent_index==-1) out << "ROOT\n";
+            if(parent_index==-1) {out << "ROOT\n"; branch_members.push_back({atom_index});} // Start the root branch with (usually) the first atom (index 0)
             else if(getNeighborIndices(molecule, atom_index, false).size()==1) {}
             else
             {
@@ -240,14 +241,19 @@ public:
                 
                 if(parent_list[parent_index] || (last_branch.back()=="ROOT" && is_tors)) // If the parent already has a child, this is a new branch
                 {
-                    out << "END" << last_branch.back() << "\n"; // End the last branch
-                    last_branch.pop_back();
+                    while((!contains(branch_members.back(),parent_index) || last_branch.back()=="ROOT") && last_branch.size()) // Pop branches until we find the branch that contains the parent atom of the current atom
+                    {
+                        out << "END" << last_branch.back() << "\n"; // End the last branch
+                        last_branch.pop_back();
+                        branch_members.pop_back();
+                    }
                     /*char raw_branch_name[32];
                     sprintf(raw_branch_name, "BRANCH   %d  %d", parent_index+1, atom_index+1);
                     raw_branch_name[31]='\0'; // Ensure null termination*/
                     branch_name = "BRANCH   " + std::to_string(written_index[parent_index]) + "  " + std::to_string(written_count+1);
                     out << branch_name << "\n";
                     last_branch.push_back(branch_name);
+                    branch_members.push_back({});
                 } 
                 else parent_list[parent_index]=true; // Mark the parent as having a child
             }
@@ -260,6 +266,7 @@ public:
             out << atom_line; // Atom ID, atom type, x, y, z, charge
             written_index[atom_index]=written_count+1;
             written_sequence.push_back(atom_index);
+            branch_members.back().push_back(atom_index);
             written_count++;
         }
         while(!last_branch.empty())
