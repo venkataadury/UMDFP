@@ -245,7 +245,7 @@ public:
                     /*char raw_branch_name[32];
                     sprintf(raw_branch_name, "BRANCH   %d  %d", parent_index+1, atom_index+1);
                     raw_branch_name[31]='\0'; // Ensure null termination*/
-                    branch_name = "BRANCH   " + std::to_string(written_index[parent_index]+1) + "  " + std::to_string(written_count+1);
+                    branch_name = "BRANCH   " + std::to_string(written_index[parent_index]) + "  " + std::to_string(written_count+1);
                     out << branch_name << "\n";
                     last_branch.push_back(branch_name);
                 } 
