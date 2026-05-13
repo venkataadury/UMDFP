@@ -55,12 +55,14 @@ class PDBQtScoreParser:
                     except: pass
     
     def getScoreDict(self): return self.score_data
-    def dumpLigandsToFile(self,input_filename,outfile_obj,namelist):
+    def dumpLigandsToFile(self,input_filename,outfile_obj,namelist,logfile=None):
         infile=open(input_filename,"r")
         remark_start=False
         my_name=None
         my_score=None
         lines=[]
+        if logfile is not None: logfile.write("[INFO]: Searching for poses in "+input_filename+"\n")
+        else: print("[INFO]: No logfile provided for dumpLigandsToFile()")
         for l in infile:
             l=l.strip()
             if not len(l): continue
@@ -73,8 +75,8 @@ class PDBQtScoreParser:
                 continue
             else:
                 if not remark_start:
-                    print(my_name,"will be matched to",namelist)
                     if my_name in namelist:
+                        if logfile is not None: logfile.write("\tFound ligand: "+my_name+"\n")
                         for m in lines: outfile_obj.write(m+"\n")
                     my_score=None
                     my_name=None
@@ -88,4 +90,8 @@ class PDBQtScoreParser:
             if self.score_filter is not None and l.find(self.score_filter)==-1: is_score=False
             if is_name: my_name=l.strip().split()[-1].strip()
             
-            lines.append(l)
+            lines.append("REMARK "+l)
+        if len(lines) and my_name is not None:
+            if my_name in namelist:
+                if logfile is not None: logfile.write("\tFound ligand: "+my_name+"\n")
+                for m in lines: outfile_obj.write(m+"\n")
