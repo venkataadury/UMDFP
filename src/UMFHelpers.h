@@ -62,6 +62,28 @@ static std::vector<int> getNeighborIndices(const UMDMolecule& molecule, int atom
     return neighbors;
 }
 
+static inline bool AtomIsPolar(const UMDAtom& atom)
+{
+    std::string element = atom.getElement();
+    return (element=="N" || element=="O" || element=="S"); // Consider N, O, and S as polar atoms
+}
+static inline bool AtomIsPolarHydrogen(const UMDAtom& atom, const UMDMolecule& molecule)
+{
+    if(!AtomIsHydrogen(atom)) return false;
+    int atom_index=-1;
+    for(int i=0;i<molecule.getNumAtoms();i++)
+    {
+        if(&molecule.getAtom(i)==&atom) {atom_index=i; break;}
+    }
+    if(atom_index==-1) return false; // Atom not found in molecule (shouldn't happen)
+    std::vector<int> neighbors = getNeighborIndices(molecule, atom_index, true);
+    for(int neighbor : neighbors)
+    {
+        if(AtomIsPolar(molecule.getAtom(neighbor))) return true; // If the hydrogen is bonded to a polar atom, consider it a polar hydrogen
+    }
+    return false;
+}
+
 static UMDBond getBondBetweenAtoms(const UMDMolecule& molecule, int atom_index1, int atom_index2)
 {
     for(int i=0;i<molecule.getNumBonds();i++)
@@ -73,7 +95,7 @@ static UMDBond getBondBetweenAtoms(const UMDMolecule& molecule, int atom_index1,
 }
 
 
-static std::vector<std::pair<int,int>> generateDFSTraversalOrder(const UMDMolecule& molecule, int start_atom_index, bool include_hydrogens=true) // each pair is (atom index, parent index)
+static std::vector<std::pair<int,int>> generateDFSTraversalOrder(const UMDMolecule& molecule, int start_atom_index, bool include_hydrogens=true, bool include_polar_hydrogens=true) // each pair is (atom index, parent index)
 {
     std::vector<std::pair<int,int>> traversal_order;
     std::vector<bool> visited(molecule.getNumAtoms(), false);
@@ -81,9 +103,9 @@ static std::vector<std::pair<int,int>> generateDFSTraversalOrder(const UMDMolecu
     {
         visited[current]=true;
         traversal_order.push_back({current, parent});
-        std::vector<int> neighbors=getNeighborIndices(molecule, current, include_hydrogens);
+        std::vector<int> neighbors=getNeighborIndices(molecule, current, AtomIsPolar(molecule.getAtom(current))?include_polar_hydrogens:include_hydrogens);
         std::vector<int> neighbor_order;
-        for(int neighbor : neighbors) neighbor_order.push_back(computeNumNeighbors(molecule, neighbor,include_hydrogens));
+        for(int neighbor : neighbors) neighbor_order.push_back(computeNumNeighbors(molecule, neighbor, AtomIsPolar(molecule.getAtom(neighbor))?include_polar_hydrogens:include_hydrogens)); // Compute the number of neighbors for each neighbor to determine the order of traversal (e.g. prioritize atoms with fewer neighbors to create branches earlier)
         std::vector<size_t> srt=argsort(neighbor_order);
         
         for(int neighbor_idx : srt)
@@ -99,7 +121,7 @@ static std::vector<std::pair<int,int>> generateDFSTraversalOrder(const UMDMolecu
 static std::pair<std::vector<bool>,std::vector<std::vector<int>>> computeAtomRingStatus(const UMDMolecule& molecule)
 {
     std::vector<bool> in_ring(molecule.getNumAtoms(), false);
-    std::vector<std::pair<int,int>> tree=generateDFSTraversalOrder(molecule, 0, true); // Generate a DFS traversal order of the molecule starting from the first atom (index 0)
+    std::vector<std::pair<int,int>> tree=generateDFSTraversalOrder(molecule, 0, true, true); // Generate a DFS traversal order of the molecule starting from the first atom (index 0), including hydrogens and polar hydrogens
     std::vector<int> visited;
     std::vector<std::vector<int>> rings; // List of rings, where each ring is represented as a list of atom indices in the ring
     for(const auto& [atom_index, parent_index] : tree)

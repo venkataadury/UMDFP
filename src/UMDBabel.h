@@ -192,7 +192,7 @@ public:
         remarks << "REMARK Net charge: " << molecule.computeNetCharge() << "\n";
         remarks << "REMARK Charge method: " << charge_method << "\n";
         // Generate branches
-        std::vector<std::pair<int,int>> tree_rep=generateDFSTraversalOrder(molecule, 0, write_H); // Generate a DFS traversal order of the molecule starting from the first atom (index 0), including hydrogens if write_H is true
+        std::vector<std::pair<int,int>> tree_rep=generateDFSTraversalOrder(molecule, 0, write_H, true); // Generate a DFS traversal order of the molecule starting from the first atom (index 0), including hydrogens if write_H is true
         // Find all atoms in a ring
         std::pair<std::vector<bool>,std::vector<std::vector<int>>> in_ring_data = computeAtomRingStatus(molecule);
         const std::vector<bool>& in_ring = in_ring_data.first;
@@ -212,7 +212,12 @@ public:
         for(const auto& [atom_index, parent_index] : tree_rep)
         {
             const UMDAtom& atom = molecule.getAtom(atom_index);
-            if(AtomIsHydrogen(atom) && !write_H) continue; // Skip hydrogens if write_H is false
+            bool is_polar=false;
+            if(AtomIsHydrogen(atom))
+            {
+                is_polar=AtomIsPolarHydrogen(atom, molecule);
+                if(!write_H && !is_polar) continue;
+            }
             if(parent_index==-1) {out << "ROOT\n"; branch_members.push_back({atom_index});} // Start the root branch with (usually) the first atom (index 0)
             else if(getNeighborIndices(molecule, atom_index, false).size()==1) {}
             else
@@ -261,6 +266,7 @@ public:
             char atom_line[256];
             atom_type=(AtomIsCarbon(atom) && atom.isAromatic()) ? "" : atom.getElement();
             if(atom.isAromatic()) atom_type += "A"; // Append A to the atom type if the atom is aromatic (this is a common convention in PDBQT files to indicate aromatic atoms, but can be modified in the future if needed to follow a different convention or include more specific information)
+            if(is_polar) atom_type+="D";
             sprintf(atom_line, "ATOM  %5d  %-3s UNL     0    %8.3f%8.3f%8.3f%6.2f%6.2f    %+3.3f %-3s\n", written_count+1, atom.getElement().c_str(), atom.getX(), atom.getY(), atom.getZ(), 0.0f, 0.0f, atom.getCharge(), atom_type.c_str());
             atom_line[255]='\0'; // Ensure null termination
             out << atom_line; // Atom ID, atom type, x, y, z, charge
