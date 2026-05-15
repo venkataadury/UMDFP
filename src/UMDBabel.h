@@ -292,7 +292,7 @@ public:
             }
             remarks << "\n";
         }
-        _out << remarks.str() << out.str(); 
+        _out <<"MODEL 1\n"<< remarks.str() << out.str() <<"ENDMDL\n"; 
         return _out;
     }
     

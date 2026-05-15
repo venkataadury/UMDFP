@@ -56,6 +56,7 @@ class PDBQtScoreParser:
     
     def getScoreDict(self): return self.score_data
     def dumpLigandsToFile(self,input_filename,outfile_obj,namelist,logfile=None):
+        found_names=[]
         infile=open(input_filename,"r")
         remark_start=False
         my_name=None
@@ -77,6 +78,7 @@ class PDBQtScoreParser:
                 if not remark_start:
                     if my_name in namelist:
                         if logfile is not None: logfile.write("\tFound ligand: "+my_name+"\n")
+                        found_names.append(my_name)
                         for m in lines: outfile_obj.write(m+"\n")
                     my_score=None
                     my_name=None
@@ -94,4 +96,6 @@ class PDBQtScoreParser:
         if len(lines) and my_name is not None:
             if my_name in namelist:
                 if logfile is not None: logfile.write("\tFound ligand: "+my_name+"\n")
+                found_names.append(my_name)
                 for m in lines: outfile_obj.write(m+"\n")
+        return found_names
