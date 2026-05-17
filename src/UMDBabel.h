@@ -197,6 +197,7 @@ public:
         int written_count=0;
         int torsdof=0;
         std::string last_branch;
+        std::vector<int> written_sequence;
         //std::vector<std::string> branch_names;
         std::function<void(int,int)> write_atom = [&](int atom_index, int parent_index)
         {
@@ -227,7 +228,7 @@ public:
                     }
                 }
                 if(related_bond_index==-1) throw std::runtime_error("Error: Could not find the bond connecting atom " + std::to_string(atom_index) + " and its parent " + std::to_string(parent_index) + " in molecule " + molecule.getName());
-                if(!bond_ring_list[related_bond_index] && !BondIsAmide(molecule, related_bond->getAtom1ID(), related_bond->getAtom2ID())) // Only increment torsional degrees of freedom for bonds that are not part of a ring and are not amide bonds
+                if(!bond_ring_list[related_bond_index] && related_bond->getBondType()<=3 && !BondIsAmide(molecule, related_bond->getAtom1ID(), related_bond->getAtom2ID())) // Only increment torsional degrees of freedom for bonds that are not part of a ring and are not amide bonds or non-sigma bonds
                 {
                     torsdof++; // Increment torsional degrees of freedom if the bond is not part of a ring
                     if(last_branch.find("ROOT")!=std::string::npos) out << "ENDROOT\n";
@@ -248,6 +249,7 @@ public:
             sprintf(atom_line, "ATOM  %5d  %-3s UNL     0    %8.3f%8.3f%8.3f%6.2f%6.2f    %+3.3f %-3s\n", written_count+1, atom.getElement().c_str(), atom.getX(), atom.getY(), atom.getZ(), 0.0f, 0.0f, atom.getCharge(), atom_type.c_str());
             written_count++;
             written_order[atom_index]=written_count; // Mark the atom as written
+            written_sequence.push_back(atom_index);
             atom_line[sizeof(atom_line)-2]='\n'; // Ensure newline termination of the atom line
             atom_line[sizeof(atom_line)-1]='\0'; // Ensure null termination of the atom line
             out << atom_line; // Write the atom line to the output stream
@@ -268,8 +270,10 @@ public:
         };
         write_atom(0, -1); // Start writing from the first atom (index 0) with no parent (-1)
         out << "TORSDOF " << torsdof << "\n"; // Write the torsional degrees of freedom (torsdof) at the end of the PDBQT file
-        
-        _out << remarks.str() << out.str();
+
+        remarks << "REMARK AtomSequence ";
+        for(int aind : written_sequence) remarks << aind << " "; remarks << "\n";        
+        _out <<"MODEL 1\n"<< remarks.str() << out.str() <<"ENDMDL\n"; 
         return _out;
     }
     std::ostream& formatMolecule_deprecated(const UMDMolecule& molecule, std::ostream& _out, const std::string& charge_method="none") const
@@ -401,12 +405,13 @@ public:
                 while(iss >> atom_index) atom_reorder.push_back(atom_index); // Store the atom indices in the order they are written in the PDBQT file (subtract 1 to convert from 1-based to 0-based indexing)
                 continue;
             }
+            if(line.find("TORSDOF")!=std::string::npos) break; // Stop reading coordinates when we reach the TORSDOF line
             if(line.find("ATOM")!=0) continue; // Skip non-atom lines
             std::istringstream iss(line);
             char record_name[7], atom_name[5], res_name[5], element_symbol[5];
             int atom_id, res_id;
             float x=1.0, y=1.0, z=1.0, occupancy, temp_factor, charge;
-            std::cout << line.c_str() << "\n";
+            //std::cout << line.c_str() << "\n";
             try {sscanf(line.c_str(), "%6s      %d  %4s   %3s     %d      %f  %f   %f  %f  %f    %f %3s",record_name, &atom_id, atom_name, res_name, &res_id, &x, &y, &z, &occupancy, &temp_factor, &charge, element_symbol);}
             catch(...)
             {
@@ -419,11 +424,13 @@ public:
         // Reorder the coordinates according to the order of atoms in the original molecule (if the REMARK AtomSequence line was present)
         if(atom_reorder.size()==coordinates.size())
         {
-            std::vector<std::vector<float>> reordered_coordinates(coordinates.size());
+            int max_idx=0;
+            for(int idx : atom_reorder) if(idx>max_idx) max_idx=idx;
+            std::vector<std::vector<float>> reordered_coordinates(max_idx + 1, std::vector<float>(3, 0.0f));
             for(size_t i=0;i<atom_reorder.size();i++)
             {
                 int original_index = atom_reorder[i];
-                if(original_index<0 || original_index>=coordinates.size())
+                if(original_index<0 || original_index>=reordered_coordinates.size())
                 {
                     std::cerr << "Warning: Atom index in REMARK AtomSequence line is out of bounds: " << original_index << "\n";
                     std::cerr << "Skipping reordering of coordinates\n";
@@ -517,22 +524,84 @@ public:
 };
 
 
-static bool loadCoordinatesFromFormat(UMDMolecule& molecule, std::istream& crdfile, GenericMoleculeFileFormat& formatter)
+static bool loadCoordinatesFromFormat(UMDMolecule& molecule, std::istream& crdfile, GenericMoleculeFileFormat& formatter, bool fit_remaining=true)
 {
     if(!formatter.hasCoordinates()) {std::cerr << "Error: Formatter does not support coordinates" << std::endl; return false;}
     std::vector<std::vector<float>> coords = formatter.readCoordinates(crdfile);
     
     if(coords.size()!=molecule.getNumAtoms())
     {
-        // Indicates bad match between coordinate file and loaded molecule. Throw an error in this case since this is likely a user error
-        std::cerr << "Error: Number of coordinate sets in file does not match number of atoms in molecule" << std::endl;
-        return false;
+        if(coords.size()<molecule.getNumAtoms()) {}
+        else
+        {
+            // Indicates bad match between coordinate file and loaded molecule. Throw an error in this case since this is likely a user error
+            std::cerr << "Error: Number of coordinate sets in file does not match number of atoms in molecule" << std::endl;
+            return false;
+        }
     }
-    for(int i=0;i<molecule.getNumAtoms();i++)
+    std::vector<bool> atom_written(molecule.getNumAtoms(), false);
+    std::vector<std::vector<float>> old_coords;
+    std::vector<std::vector<float>> new_coords;
+    for(int i=0;i<molecule.getNumAtoms() && i<coords.size();i++)
     {
+        old_coords.push_back({molecule.getAtom(i).getX(), molecule.getAtom(i).getY(), molecule.getAtom(i).getZ()});
+        if(abs(coords[i][0])>1e-6 || abs(coords[i][1])>1e-6 || abs(coords[i][2])>1e-6) atom_written[i]=true;
+        else {atom_written[i]=false; new_coords.push_back({}); continue;}
         molecule.getAtom(i).getData().x = coords[i][0];
         molecule.getAtom(i).getData().y = coords[i][1];
         molecule.getAtom(i).getData().z = coords[i][2];
+        new_coords.push_back({coords[i][0], coords[i][1], coords[i][2]});
+    }
+    if(fit_remaining)
+    {
+        std::vector<std::vector<std::vector<float>>> transforms = localAlignAtoms(old_coords, new_coords, atom_written, molecule);
+        assert (transforms.size()==molecule.getNumAtoms()), "Error: Number of transforms does not match number of atoms in molecule";
+        for(int i=0;i<molecule.getNumAtoms();i++)
+        {
+            if(atom_written[i] || !transforms[i].size()) continue;
+            std::vector<float> old_coord = {molecule.getAtom(i).getX(), molecule.getAtom(i).getY(), molecule.getAtom(i).getZ()};
+            std::vector<float> new_coord = std::vector<float>(3, 0.0f);
+            for(int j=0;j<3;j++)
+            {
+                // Each transform is a 4x4 matrix, where the last row is [0, 0, 0, 1] and the last column is the translation vector. The rotation part is the upper-left 3x3 submatrix.
+                new_coord[j] = transforms[i][0][j]*old_coord[0] + transforms[i][1][j]*old_coord[1] + transforms[i][2][j]*old_coord[2] + transforms[i][3][j];
+            }
+            molecule.getAtom(i).getData().x = new_coord[0];
+            molecule.getAtom(i).getData().y = new_coord[1];
+            molecule.getAtom(i).getData().z = new_coord[2];
+            
+            float old_bond_length =0.0f;
+            int parent=getNeighborIndices(molecule, i, true)[0]; // Get the first neighbor as the parent atom
+            old_bond_length=sqrt(pow(old_coord[0]-old_coords[parent][0],2)+pow(old_coord[1]-old_coords[parent][1],2)+pow(old_coord[2]-old_coords[parent][2],2));
+            float new_bond_length = sqrt(pow(new_coord[0]-new_coords[parent][0],2)+pow(new_coord[1]-new_coords[parent][1],2)+pow(new_coord[2]-new_coords[parent][2],2));
+            //Force new length to match old (change coordinate 'i')
+            float scale_factor = old_bond_length/new_bond_length;
+            new_coord[0] = new_coords[parent][0] + (new_coord[0]-new_coords[parent][0])*scale_factor;
+            new_coord[1] = new_coords[parent][1] + (new_coord[1]-new_coords[parent][1])*scale_factor;
+            new_coord[2] = new_coords[parent][2] + (new_coord[2]-new_coords[parent][2])*scale_factor;
+            molecule.getAtom(i).getData().x = new_coord[0];
+            molecule.getAtom(i).getData().y = new_coord[1];
+            molecule.getAtom(i).getData().z = new_coord[2];
+        }
+        minimizeTerminalAngles(molecule, 5.0f, 0.1f, atom_written);
+        for(int i=0;i<molecule.getNumAtoms();i++)
+        {
+            if(atom_written[i]) continue;
+            float old_bond_length =1.0f;
+            int parent=getNeighborIndices(molecule, i, true)[0]; // Get the first neighbor as the parent atom
+
+            std::vector<float> new_coord = {molecule.getAtom(i).getX(), molecule.getAtom(i).getY(), molecule.getAtom(i).getZ()};
+            float new_bond_length = sqrt(pow(new_coord[0]-new_coords[parent][0],2)+pow(new_coord[1]-new_coords[parent][1],2)+pow(new_coord[2]-new_coords[parent][2],2));
+            //Force new length to match old (change coordinate 'i')
+            float scale_factor = old_bond_length/new_bond_length;
+            
+            new_coord[0] = new_coords[parent][0] + (new_coord[0]-new_coords[parent][0])*scale_factor;
+            new_coord[1] = new_coords[parent][1] + (new_coord[1]-new_coords[parent][1])*scale_factor;
+            new_coord[2] = new_coords[parent][2] + (new_coord[2]-new_coords[parent][2])*scale_factor;
+            molecule.getAtom(i).getData().x = new_coord[0];
+            molecule.getAtom(i).getData().y = new_coord[1];
+            molecule.getAtom(i).getData().z = new_coord[2];
+        }
     }
     return true;
 }

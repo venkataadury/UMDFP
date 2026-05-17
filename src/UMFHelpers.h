@@ -306,4 +306,236 @@ static std::map<std::string, UMDMolecule> drainUMDReader(UMDReader& reader)
     return molecules;
 }
 
+static std::vector<std::vector<float>> invertMatrix(const std::vector<std::vector<float>>& matrix)
+{
+    // This function inverts a 4x4 matrix using Gaussian elimination
+    int n = matrix.size();
+    std::vector<std::vector<float>> augmented(n, std::vector<float>(2*n, 0.0f));
+    for(int i=0;i<n;i++)
+    {
+        for(int j=0;j<n;j++) augmented[i][j]=matrix[i][j];
+        augmented[i][n+i]=1.0f; // Append identity matrix
+    }
+    for(int i=0;i<n;i++)
+    {
+        float pivot = augmented[i][i];
+        float abs_pivot = (pivot>0)? pivot : -pivot;
+        if(abs_pivot<1e-6) throw std::runtime_error("Matrix is singular and cannot be inverted with pivot at row "+std::to_string(i)+" having value "+std::to_string(abs_pivot));
+        for(int j=0;j<2*n;j++) augmented[i][j]/=pivot; // Normalize pivot row
+        for(int k=0;k<n;k++)
+        {
+            if(k==i) continue;
+            float factor = augmented[k][i];
+            for(int j=0;j<2*n;j++) augmented[k][j]-=factor*augmented[i][j]; // Eliminate column
+        }
+    }
+    std::vector<std::vector<float>> inverse(n, std::vector<float>(n, 0.0f));
+    for(int i=0;i<n;i++)
+    {
+        for(int j=0;j<n;j++) inverse[i][j]=augmented[i][n+j]; // Extract inverse matrix
+    }
+    return inverse;
+}
+static std::vector<std::vector<float>> multiplyMatrices(const std::vector<std::vector<float>>& A, const std::vector<std::vector<float>>& B)
+{
+    int n = A.size();
+    int m = B[0].size();
+    int p = B.size();
+    if(A[0].size()!=p) throw std::runtime_error("Matrix dimensions do not match for multiplication");
+    std::vector<std::vector<float>> C(n, std::vector<float>(m, 0.0f));
+    for(int i=0;i<n;i++)
+    {
+        for(int j=0;j<m;j++)
+        {
+            for(int k=0;k<p;k++) C[i][j]+=A[i][k]*B[k][j];
+        }
+    }
+    return C;
+}
+static std::vector<std::vector<std::vector<float>>> localAlignAtoms(std::vector<std::vector<float>> old_coords, std::vector<std::vector<float>> new_coords, std::vector<bool> use_idxs, const UMDMolecule& molecule)
+{
+    std::vector<std::vector<std::vector<float>>> ret;
+    for(int i=0;i<use_idxs.size();i++)
+    {
+        if(use_idxs[i]) {ret.push_back({}); continue;} // Don't transform the coordinates that are used for alignment; transform the rest
+        std::vector<int> neighbors = getNeighborIndices(molecule, i, true);
+        std::vector<int> align_atoms;
+        int qidx=0;
+        constexpr int N_NEIGH=4;
+        while(align_atoms.size()<N_NEIGH)
+        {
+            for(int neighbor : neighbors)
+            {
+                if(use_idxs[neighbor] && !contains(align_atoms, neighbor)) align_atoms.push_back(neighbor);
+                if(align_atoms.size()>=N_NEIGH) break;
+            }
+            if(align_atoms.size()>=N_NEIGH) break;
+            if(align_atoms.size()==0) break; // If no neighbors are available for alignment, break
+            neighbors=getNeighborIndices(molecule, align_atoms[qidx++], true);
+        }
+        if(align_atoms.size()<N_NEIGH) {ret.push_back({}); continue;} // If less than 4 atoms are available for alignment, skip this atom
+        
+        std::vector<std::vector<float>> old_align_coords, new_align_coords;
+        for(int idx : align_atoms)
+        {
+            old_align_coords.push_back(old_coords[idx]);
+            new_align_coords.push_back(new_coords[idx]);
+        }
+        std::vector<std::vector<float>> transform; // 4x4 transformation matrix
+        for(int i=0;i<4;i++) transform.push_back(std::vector<float>(4, 0.0f));
+
+        // Compute the transformation matrix by matrix inversion using old and new coordinates
+        std::vector<std::vector<float>> old_matrix(4, std::vector<float>(4, 0.0f));
+        std::vector<std::vector<float>> new_matrix(4, std::vector<float>(4, 0.0f));
+        for(int i=0;i<N_NEIGH;i++)
+        {
+            old_matrix[i][0]=old_align_coords[i][0];
+            old_matrix[i][1]=old_align_coords[i][1];
+            old_matrix[i][2]=old_align_coords[i][2];
+            old_matrix[i][3]=1.0f;
+            new_matrix[i][0]=new_align_coords[i][0];
+            new_matrix[i][1]=new_align_coords[i][1];
+            new_matrix[i][2]=new_align_coords[i][2];
+            new_matrix[i][3]=1.0f;
+        }
+        old_matrix[3][3]=1.0f; // Set the last row of the old matrix to [0, 0, 0, 1]
+        new_matrix[3][3]=1.0f; // Set the last row of the new matrix to [0, 0, 0, 1]
+
+        // Compute the transformation matrix as inverse(old_matrix)*new_matrix
+        try{
+            std::vector<std::vector<float>> old_matrix_inv = invertMatrix(old_matrix);
+            transform = multiplyMatrices(old_matrix_inv, new_matrix);
+            ret.push_back(transform);
+        }
+        catch(const std::runtime_error& e)
+        {
+            std::cerr << "Error inverting matrix for atom " << i << ": " << e.what() << std::endl;
+            ret.push_back({}); // If the matrix is singular, skip this atom
+        }
+    }
+    return ret;
+}
+
+static void minimizeTerminalAngles(UMDMolecule& molecule, float tolerance=5.0f, float step_size=0.1f, std::vector<bool> edit_frozen=std::vector<bool>())
+{
+    std::vector<bool> allow_movement(molecule.getNumAtoms(), true);
+    for(int i=0;i<molecule.getNumAtoms();i++)
+    {
+        if(computeNumNeighbors(molecule, i, true)>1) allow_movement[i]=false; // Only move terminal atoms (with only one non-hydrogen neighbor)
+        if(!edit_frozen.empty() && edit_frozen[i]) allow_movement[i]=false; // If edit_limited is provided, only allow movement for atoms marked as true
+    }
+    for(int i=0;i<molecule.getNumAtoms();i++)
+    {
+        float TARGET_ANGLE=109.5f; // Target angle for SP3 hybridized atoms
+        if(molecule.getAtom(i).getHybridization()==3) // SP3
+            TARGET_ANGLE=109.5f;
+        else if(molecule.getAtom(i).getHybridization()==2) // SP2
+            TARGET_ANGLE=120.0f;
+        else if(molecule.getAtom(i).getHybridization()==6) // SP3D2
+            TARGET_ANGLE=90.0f;
+        else continue;
+
+        std::vector<int> neighbors = getNeighborIndices(molecule, i, true);
+        if(neighbors.size()<3) continue; // Need at least 3 neighbors to define an angle
+        std::vector<std::vector<float>> forces;
+        bool forces_set=true;
+        int iter_num=0;
+        while(iter_num<1000 && forces_set)
+        {
+            forces_set=false;
+            forces=std::vector<std::vector<float>>(); // Reset forces
+            for(int j=0;j<neighbors.size();j++) forces.push_back({0.0f, 0.0f, 0.0f}); // Initialize forces to zero 
+
+            for(int j=0;j<neighbors.size();j++)
+            {
+                std::vector<float> force={0.0f, 0.0f, 0.0f};
+                for(int k=0;k<neighbors.size();k++)
+                {
+                    if(j==k) continue; // Skip the same neighbor
+                    int neighbor1=neighbors[j];
+                    int neighbor2=neighbors[k];
+                    //if(!allow_movement[neighbor1] && !allow_movement[neighbor2]) continue; // Only adjust angles for terminal atoms
+
+                    std::vector<float> vec1 = {molecule.getAtom(neighbor1).getX()-molecule.getAtom(i).getX(), molecule.getAtom(neighbor1).getY()-molecule.getAtom(i).getY(), molecule.getAtom(neighbor1).getZ()-molecule.getAtom(i).getZ()};
+                    std::vector<float> vec2 = {molecule.getAtom(neighbor2).getX()-molecule.getAtom(i).getX(), molecule.getAtom(neighbor2).getY()-molecule.getAtom(i).getY(), molecule.getAtom(neighbor2).getZ()-molecule.getAtom(i).getZ()};
+                    float dot_product = vec1[0]*vec2[0]+vec1[1]*vec2[1]+vec1[2]*vec2[2];
+                    float mag1 = std::sqrt(vec1[0]*vec1[0]+vec1[1]*vec1[1]+vec1[2]*vec1[2]);
+                    float mag2 = std::sqrt(vec2[0]*vec2[0]+vec2[1]*vec2[1]+vec2[2]*vec2[2]);
+                    float angle = std::acos(dot_product/(mag1*mag2))*180.0f/M_PI; // Angle in degrees
+                    if(angle<TARGET_ANGLE-tolerance || angle>TARGET_ANGLE+tolerance)
+                    {
+                        // Compute the force vector to adjust the angle
+                        std::vector<float> middle_vector = {vec1[0]+vec2[0], vec1[1]+vec2[1], vec1[2]+vec2[2]};
+                        float middle_mag = std::sqrt(middle_vector[0]*middle_vector[0]+middle_vector[1]*middle_vector[1]+middle_vector[2]*middle_vector[2]);
+                        if(middle_mag<1e-6) continue; // Skip if the cross product is too small (vectors are parallel)
+                        for(int d=0;d<3;d++) middle_vector[d]/=middle_mag; // Normalize
+                        float angle_diff = (angle<TARGET_ANGLE) ? (TARGET_ANGLE-angle) : (TARGET_ANGLE-angle);
+                        std::vector<float> unproj_vector;
+                        for(int d=0;d<3;d++) unproj_vector.push_back(middle_vector[d]-((middle_vector[0]*vec1[0]+middle_vector[1]*vec1[1]+middle_vector[2]*vec1[2])/(mag1*mag1))*vec1[d]);
+                        for(int d=0;d<3;d++)
+                            force[d]-=unproj_vector[d]*angle_diff*step_size; // Scale the force by the angle difference and step size
+
+                        /*std::vector<float> off_plane={vec1[1]*vec2[2]-vec1[2]*vec2[1], vec1[2]*vec2[0]-vec1[0]*vec2[2], vec1[0]*vec2[1]-vec1[1]*vec2[0]};
+                        float off_plane_mag = std::sqrt(off_plane[0]*off_plane[0]+off_plane[1]*off_plane[1]+off_plane[2]*off_plane[2]);
+                        if(off_plane_mag>1e-6)
+                        {
+                            for(int d=0;d<3;d++) off_plane[d]/=off_plane_mag; // Normalize
+                            for(int d=0;d<3;d++)
+                                force[d]+=off_plane[d]*step_size; // Scale the force by the angle difference and step size
+                        }*/
+                        /*for(int d=0;d<3;d++)
+                            forces[k][d]-=unproj_vector[d]*angle_diff*step_size; // Scale the force by the angle difference and step size*/
+                    }
+                }
+                // Apply the computed force to the neighbor atom if it is allowed to move
+                if(allow_movement[neighbors[j]])
+                {
+                    for(int d=0;d<3;d++)
+                        forces[j][d]+=force[d]; // Accumulate the force for this neighbor
+                    if(force[0]*force[0]+force[1]*force[1]+force[2]*force[2]>1e-6) forces_set=true; // If the force is significant, set forces_set to true
+                }
+                else forces.push_back({0.0f, 0.0f, 0.0f}); // If the atom is not allowed to move, set the force to zero
+            }
+            // Apply the forces to the neighbor atoms
+            for(int j=0;j<neighbors.size();j++)
+            {
+                if(allow_movement[neighbors[j]])
+                {
+                    molecule.getAtom(neighbors[j]).getData().x += forces[j][0];
+                    molecule.getAtom(neighbors[j]).getData().y += forces[j][1];
+                    molecule.getAtom(neighbors[j]).getData().z += forces[j][2];
+                }
+            }
+            iter_num++;
+        }
+        /*for(int j=0;j<neighbors.size();j++)
+        {
+            int neighbor1=neighbors[j];
+            int neighbor2=neighbors[(j+1)%neighbors.size()];
+            if(!allow_movement[neighbor2]) continue; // Only adjust angles for terminal atoms
+            std::vector<float> vec1 = {molecule.getAtom(neighbor1).getX()-molecule.getAtom(i).getX(), molecule.getAtom(neighbor1).getY()-molecule.getAtom(i).getY(), molecule.getAtom(neighbor1).getZ()-molecule.getAtom(i).getZ()};
+            std::vector<float> vec2 = {molecule.getAtom(neighbor2).getX()-molecule.getAtom(i).getX(), molecule.getAtom(neighbor2).getY()-molecule.getAtom(i).getY(), molecule.getAtom(neighbor2).getZ()-molecule.getAtom(i).getZ()};
+            float dot_product = vec1[0]*vec2[0]+vec1[1]*vec2[1]+vec1[2]*vec2[2];
+            float mag1 = std::sqrt(vec1[0]*vec1[0]+vec1[1]*vec1[1]+vec1[2]*vec1[2]);
+            float mag2 = std::sqrt(vec2[0]*vec2[0]+vec2[1]*vec2[1]+vec2[2]*vec2[2]);
+            float angle = std::acos(dot_product/(mag1*mag2))*180.0f/M_PI; // Angle in degrees
+            while(angle<TARGET_ANGLE-tolerance || angle>TARGET_ANGLE+tolerance)
+            {
+                std::cout << "Adjusting angle between atoms " << neighbor1 << ", " << i << ", " << neighbor2 << " from " << angle << " degrees to " << TARGET_ANGLE << " degrees\n";
+                // Adjust the position of neighbor2 to achieve the target angle (this is a simple adjustment and may not be physically accurate)
+                float scale = mag2*std::tan(TARGET_ANGLE*(M_PI/180.0f-0.001))/mag1;
+                molecule.getAtom(neighbor2).getData().x = molecule.getAtom(i).getX() - vec1[0]*scale*step_size;
+                molecule.getAtom(neighbor2).getData().y = molecule.getAtom(i).getY() - vec1[1]*scale*step_size;
+                molecule.getAtom(neighbor2).getData().z = molecule.getAtom(i).getZ() - vec1[2]*scale*step_size;
+
+                // Recompute the angle after adjustment
+                vec2 = {molecule.getAtom(neighbor2).getX()-molecule.getAtom(i).getX(), molecule.getAtom(neighbor2).getY()-molecule.getAtom(i).getY(), molecule.getAtom(neighbor2).getZ()-molecule.getAtom(i).getZ()};
+                dot_product = vec1[0]*vec2[0]+vec1[1]*vec2[1]+vec1[2]*vec2[2];
+                mag1 = std::sqrt(vec1[0]*vec1[0]+vec1[1]*vec1[1]+vec1[2]*vec1[2]);
+                mag2 = std::sqrt(vec2[0]*vec2[0]+vec2[1]*vec2[1]+vec2[2]*vec2[2]);
+                angle = std::acos(dot_product/(mag1*mag2))*180.0f/M_PI; // Angle in degrees
+            }
+        }*/
+    }
+}
 #endif

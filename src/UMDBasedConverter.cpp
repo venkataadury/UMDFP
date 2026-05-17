@@ -24,7 +24,7 @@ int main(int argc, char** argv)
     GenericMoleculeFileFormat* output_formatter;
     if(argc<2)
     {
-        std::cerr << "Usage: " << argv[0] << " <input file> [<template UMD file> (Default: input file)] [-if <input format> (Default: umd)] [-of <output format> (Default: mol2)] [-o <output file>] [-e (Read names from stdin. Default: false)]\n";
+        std::cerr << "Usage: " << argv[0] << " <input file> [<template UMD file> (Default: input file)] [-if <input format> (Default: umd)] [-of <output format> (Default: mol2)] [-o <output file>] [-e (Read names from stdin. Default: false)] [-noh (Do not expect hydrogens)]\n";
         return 1;
     }
     std::string input_file = argv[1];
@@ -34,12 +34,14 @@ int main(int argc, char** argv)
     std::string output_file = "";
     bool read_names_from_stdin=false;
     bool template_chosen=false;
+    bool has_H=true;
     for(int i=2;i<argc;i++)
     {
         std::string arg = argv[i];
         if(arg=="-if" && i+1<argc) input_fmt = argv[++i];
         else if(arg=="-of" && i+1<argc) output_fmt = argv[++i];
         else if(arg=="-o" && i+1<argc) output_file = argv[++i];
+        else if(arg=="-noh") has_H=false;
         else if(arg=="-e") read_names_from_stdin=true;
         else if(arg[0]!='-' && !template_chosen) {
             template_file = arg;
