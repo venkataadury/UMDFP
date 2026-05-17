@@ -191,6 +191,95 @@ public:
         remarks << "REMARK SMILES: " << molecule.getSMILES().getData() << "\n";
         remarks << "REMARK Net charge: " << molecule.computeNetCharge() << "\n";
         remarks << "REMARK Charge method: " << charge_method << "\n";
+
+        std::vector<int> written_order(molecule.getNumAtoms(), -1);
+        std::vector<bool> bond_ring_list=computeBondRingStatus(molecule);
+        int written_count=0;
+        int torsdof=0;
+        std::string last_branch;
+        //std::vector<std::string> branch_names;
+        std::function<void(int,int)> write_atom = [&](int atom_index, int parent_index)
+        {
+            const UMDAtom& atom = molecule.getAtom(atom_index);
+            bool is_hydrogen = AtomIsHydrogen(atom);
+            //if(AtomIsHydrogen(atom)) std::cout << "Writing hydrogen atom " << atom_index << " with parent " << parent_index << "\n";
+            if(!write_H && is_hydrogen && !AtomIsPolarHydrogen(atom, molecule)) return; // Skip hydrogens if write_H is false (but write polar hydrogens if they are bonded to polar atoms)
+            
+            const UMDBond* related_bond=nullptr;
+            int related_bond_index=-1;
+            std::string branch_str="";
+            if(parent_index==-1)
+            {
+                branch_str="ROOT\n";
+                last_branch=branch_str;
+            }
+            else if(is_hydrogen || computeNumNeighbors(molecule, atom_index, true)<=1) branch_str=""; // Do not create a branch for hydrogens or other terminal atoms
+            else
+            {
+                for(int i=0;i<molecule.getNumBonds();i++)
+                {
+                    const UMDBond& bond = molecule.getBond(i);
+                    if((bond.getAtom1ID()==atom_index && bond.getAtom2ID()==parent_index) || (bond.getAtom2ID()==atom_index && bond.getAtom1ID()==parent_index))
+                    {
+                        related_bond = &bond;
+                        related_bond_index=i;
+                        break;
+                    }
+                }
+                if(related_bond_index==-1) throw std::runtime_error("Error: Could not find the bond connecting atom " + std::to_string(atom_index) + " and its parent " + std::to_string(parent_index) + " in molecule " + molecule.getName());
+                if(!bond_ring_list[related_bond_index] && !BondIsAmide(molecule, related_bond->getAtom1ID(), related_bond->getAtom2ID())) // Only increment torsional degrees of freedom for bonds that are not part of a ring and are not amide bonds
+                {
+                    torsdof++; // Increment torsional degrees of freedom if the bond is not part of a ring
+                    if(last_branch.find("ROOT")!=std::string::npos) out << "ENDROOT\n";
+                    last_branch="BRANCH " + std::to_string(written_order[parent_index]) + " " + std::to_string(written_count+1) + "\n"; // Write the branch line for the PDBQT file
+                    branch_str=last_branch;
+                }
+            }
+
+            if(branch_str.length()>0)
+            {
+                out << branch_str; // Write the branch line to the output stream
+            }
+            std::string atom_type;
+            atom_type=(AtomIsCarbon(atom) && atom.isAromatic()) ? "" : atom.getElement();
+            if(atom.isAromatic()) atom_type += "A"; // Append A to the atom type if the atom is aromatic
+            if(AtomIsPolarHydrogen(atom, molecule)) atom_type+="D"; // Append D to the atom type if the atom is a polar hydrogen
+            char atom_line[100];
+            sprintf(atom_line, "ATOM  %5d  %-3s UNL     0    %8.3f%8.3f%8.3f%6.2f%6.2f    %+3.3f %-3s\n", written_count+1, atom.getElement().c_str(), atom.getX(), atom.getY(), atom.getZ(), 0.0f, 0.0f, atom.getCharge(), atom_type.c_str());
+            written_count++;
+            written_order[atom_index]=written_count; // Mark the atom as written
+            atom_line[sizeof(atom_line)-2]='\n'; // Ensure newline termination of the atom line
+            atom_line[sizeof(atom_line)-1]='\0'; // Ensure null termination of the atom line
+            out << atom_line; // Write the atom line to the output stream
+            std::vector<int> neighbors = getNeighborIndices(molecule, atom_index, true);
+            std::vector<int> neighbor_orderer;
+            for(int n : neighbors) neighbor_orderer.push_back(computeNumNeighbors(molecule, n, false));
+            std::vector<size_t> neighbor_order = argsort(neighbor_orderer); // Sort neighbors by the number of neighbors they have (ascending order)
+            
+            //for(int nidx=0; nidx<neighbors.size(); nidx++)
+            for(int nidx : neighbor_order)
+            {
+                int neighbor=neighbors[nidx];
+                if(neighbor==parent_index || written_order[neighbor]!=-1) continue; // Skip the parent atom to avoid backtracking
+                if(AtomIsHydrogen(molecule.getAtom(neighbor)) && !write_H && !AtomIsPolarHydrogen(molecule.getAtom(neighbor), molecule)) continue; // Skip hydrogens if write_H is false (but write polar hydrogens if they are bonded to polar atoms)
+                write_atom(neighbor, atom_index); // Recursively write the neighbor atoms
+            }
+            if(branch_str.length()>0 && branch_str.find("BRANCH")!=std::string::npos) out << "END"+branch_str; // Write the end of the branch line to the output stream (all except the ROOT branch)
+        };
+        write_atom(0, -1); // Start writing from the first atom (index 0) with no parent (-1)
+        out << "TORSDOF " << torsdof << "\n"; // Write the torsional degrees of freedom (torsdof) at the end of the PDBQT file
+        
+        _out << remarks.str() << out.str();
+        return _out;
+    }
+    std::ostream& formatMolecule_deprecated(const UMDMolecule& molecule, std::ostream& _out, const std::string& charge_method="none") const
+    {
+        std::stringstream out;
+        std::stringstream remarks;
+        remarks << "REMARK Name: " << molecule.getName() << "\n";
+        remarks << "REMARK SMILES: " << molecule.getSMILES().getData() << "\n";
+        remarks << "REMARK Net charge: " << molecule.computeNetCharge() << "\n";
+        remarks << "REMARK Charge method: " << charge_method << "\n";
         // Generate branches
         std::vector<std::pair<int,int>> tree_rep=generateDFSTraversalOrder(molecule, 0, write_H, true); // Generate a DFS traversal order of the molecule starting from the first atom (index 0), including hydrogens if write_H is true
         // Find all atoms in a ring
@@ -219,7 +308,7 @@ public:
                 if(!write_H && !is_polar) continue;
             }
             if(parent_index==-1) {out << "ROOT\n"; branch_members.push_back({atom_index});} // Start the root branch with (usually) the first atom (index 0)
-            else if(getNeighborIndices(molecule, atom_index, false).size()==1) {}
+            //else if(getNeighborIndices(molecule, atom_index, false).size()==1) {}
             else
             {
                 bool is_tors=false;
@@ -244,6 +333,7 @@ public:
                     else {torsdof++; is_tors=true;}
                 }
                 
+                //std::cout << atom_index <<"(" << molecule.getAtom(atom_index).getElement() << ")" << " <- " << parent_index <<"(" << molecule.getAtom(parent_index).getElement() << ")"<< " (parent is taken? " << parent_list[parent_index] << ", last branch: " << last_branch.back() << ", is torsion: " << is_tors << ")\n";
                 if(parent_list[parent_index] || (last_branch.back()=="ROOT" && is_tors)) // If the parent already has a child, this is a new branch
                 {
                     while((!contains(branch_members.back(),parent_index) || last_branch.back()=="ROOT") && last_branch.size()) // Pop branches until we find the branch that contains the parent atom of the current atom
@@ -252,9 +342,7 @@ public:
                         last_branch.pop_back();
                         branch_members.pop_back();
                     }
-                    /*char raw_branch_name[32];
-                    sprintf(raw_branch_name, "BRANCH   %d  %d", parent_index+1, atom_index+1);
-                    raw_branch_name[31]='\0'; // Ensure null termination*/
+                    
                     branch_name = "BRANCH   " + std::to_string(written_index[parent_index]) + "  " + std::to_string(written_count+1);
                     out << branch_name << "\n";
                     last_branch.push_back(branch_name);

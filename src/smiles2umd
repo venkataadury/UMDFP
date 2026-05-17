@@ -31,7 +31,7 @@ print("OpenFF Molecule parameterizer loading")
 HYBRIDIZATION={"S": 0, "SP": 1, "SP2": 2, "SP3": 3, "SP3D": 4, "SP3D2": 5}
 ELEMENTS={1: "H", 3: "Li", 4: "Be", 5: "B", 6: "C", 7: "N", 8: "O", 9: "F",
           12: "Mg", 14: "Si", 15: "P", 16: "S", 17: "Cl", 26: "Fe", 35: "Br",
-          53: "I", 46: "Pd", 78: "Pt", 34: "Se", 30: "Zn"}
+          53: "I", 46: "Pd", 78: "Pt", 34: "Se", 30: "Zn", 79: "Au", 33: "As"}
 BOND_ORDERS={rdkit.Chem.rdchem.BondType.SINGLE: 2, rdkit.Chem.rdchem.BondType.DOUBLE: 4, rdkit.Chem.rdchem.BondType.AROMATIC: 3, rdkit.Chem.rdchem.BondType.TRIPLE: 6}
 
 
@@ -105,38 +105,46 @@ def raw_dump(smiles,outf,molname=None):
     if type(outf)==str:
         outf=open(outf,"w")
         madefile=True
-    outf.write("START\n")
-    outf.write("; Name\n")
-    outf.write(str(molname)+"\n")
-    outf.write("; SMILES String\n")
-    outf.write(str(smiles)+"\n")
-    outf.write("; # Atoms\n")
-    outf.write(str(ready_mol.GetNumAtoms())+"\n")
-    outf.write("; # Bonds\n")
-    outf.write(str(ready_mol.GetNumBonds())+"\n")
+    blob=""
+    blob+="START\n"
+    blob+="; Name\n"
+    blob+=str(molname)+"\n"
+    blob+="; SMILES String\n"
+    blob+=str(smiles)+"\n"
+    blob+="; # Atoms\n"
+    blob+=str(ready_mol.GetNumAtoms())+"\n"
+    blob+="; # Bonds\n"
+    blob+=str(ready_mol.GetNumBonds())+"\n"
     
-    outf.write("; Atoms\n")
-    outf.write("; Index Element X Y Z Q Hyb Aromatic FormalQ\n")
+    blob+="; Atoms\n"
+    blob+="; Index Element X Y Z Q Hyb Aromatic FormalQ\n"
     
     conf = ready_mol.GetConformer()
     for ai,a in enumerate(ready_mol.GetAtoms()):
-        wstr=str(ai)+" "+ELEMENTS[a.GetAtomicNum()]+" "
+        try:
+            wstr=str(ai)+" "+ELEMENTS[a.GetAtomicNum()]+" "
+        except:
+            print(molname,"failed with unspecified atomic number: "+str(a.GetAtomicNum()))
         pos = conf.GetAtomPosition(ai)
         wstr+=str(pos.x)+" "+str(pos.y)+" "+str(pos.z)+" "
         q=round(a.GetDoubleProp("PartialCharge"),3)
         wstr+=str(q)+" "
-        wstr+=str(HYBRIDIZATION[str(a.GetHybridization())])+" "
+        try:
+            wstr+=str(HYBRIDIZATION[str(a.GetHybridization())])+" "
+        except:
+            print(molname,"failed with unspecified Hybridization: "+str(a.GetHybridization()))
         wstr+=("1" if a.GetIsAromatic() else "0")+" "
         wstr+=str(a.GetFormalCharge())+"\n"
-        outf.write(wstr)
+        blob+=wstr
 
-    outf.write("; Bonds\n")
-    outf.write("; Index At1 At2 2*Order\n")
+    blob+="; Bonds\n"
+    blob+="; Index At1 At2 2*Order\n"
     for bi,b in enumerate(ready_mol.GetBonds()):
         wstr=str(bi)+" "+str(b.GetBeginAtomIdx())+" "+str(b.GetEndAtomIdx())+" "
         wstr+=str(BOND_ORDERS[b.GetBondType()])+"\n"
-        outf.write(wstr)
-    outf.write("END\n")
+        blob+=wstr
+    blob+="END\n"
+    outf.write(blob)
     if madefile: outf.close()
     return ready_mol
 
