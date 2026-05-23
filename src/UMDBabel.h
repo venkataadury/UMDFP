@@ -40,7 +40,12 @@ public:
         {
             const UMDAtom& atom = molecule.getAtom(i);
             std::string atom_type=atom.getElement();
-            if(atom.isAromatic()) atom_type += ".ar"; // Append .ar to the atom type if the atom is aromatic
+            if(atom.isAromatic())
+            {
+                if(atom_type=="C") atom_type="C.ar"; // Use C.ar for aromatic carbons in Mol2 format
+                else atom_type += ".2"; // Append .2 to the atom type if the atom is aromatic, but not Carbon
+            }
+            else if(AtomIsHalogen(atom)) {}
             else
             {
                 switch(atom.getHybridization())

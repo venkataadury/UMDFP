@@ -8,6 +8,7 @@
 static inline bool AtomIsHydrogen(const UMDAtom& atom) {return atom.getElement()=="H";}
 static inline bool AtomIsCarbon(const UMDAtom& atom) {return atom.getElement()=="C";}
 static inline bool AtomIsNitrogen(const UMDAtom& atom) {return atom.getElement()=="N";}
+static inline bool AtomIsHalogen(const UMDAtom& atom) {return (atom.getElement()=="F" || atom.getElement()=="Cl" || atom.getElement()=="Br" || atom.getElement()=="I");}
 static bool BondIsAmide(const UMDMolecule& molecule, int atom_index1, int atom_index2)
 {
     if(AtomIsCarbon(molecule.getAtom(atom_index2))) std::swap(atom_index1, atom_index2); // Ensure that atom 1 is the carbon and atom 2 is the nitrogen (if it's an amide, the carbon will be bonded to the nitrogen)
