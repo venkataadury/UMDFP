@@ -31,6 +31,18 @@ static bool BondIsAmide(const UMDMolecule& molecule, int atom_index1, int atom_i
     bool verdict = (carbonyl_carbon && atom2.getElement()=="N");
     return verdict; // Return true if atom 1 is a carbonyl carbon and atom 2 is a nitrogen
 }
+static bool AtomIsAmideNitrogen(const UMDMolecule& molecule, int atom_index)
+{
+    if(!AtomIsNitrogen(molecule.getAtom(atom_index))) return false; // If the atom is not nitrogen, it can't be an amide nitrogen
+    for(int i=0;i<molecule.getNumBonds();i++)    {
+        const UMDBond& bond = molecule.getBond(i);
+        if(bond.getAtom1ID()==atom_index || bond.getAtom2ID()==atom_index)
+        {            int neighbor_index = (bond.getAtom1ID()==atom_index) ? bond.getAtom2ID() : bond.getAtom1ID();
+            if(AtomIsCarbon(molecule.getAtom(neighbor_index)) && BondIsAmide(molecule, atom_index, neighbor_index)) return true; // If the nitrogen is bonded to a carbon and that carbon is part of an amide bond, then this nitrogen is an amide nitrogen
+        }
+    }
+    return false; // If we don't find any amide bonds involving this nitrogen, return false
+}
 template<class T> static bool contains(const std::vector<T>& vec, const T& value) {return std::find(vec.begin(), vec.end(), value) != vec.end();}
 
 static int computeNumNeighbors(const UMDMolecule& molecule, int atom_index, bool include_hydrogens=true)

@@ -46,6 +46,7 @@ public:
                 else atom_type += ".2"; // Append .2 to the atom type if the atom is aromatic, but not Carbon
             }
             else if(AtomIsHalogen(atom)) {}
+            else if(AtomIsAmideNitrogen(molecule, i)) atom_type="N.am"; // Use N.am for amide nitrogens in Mol2 format
             else
             {
                 switch(atom.getHybridization())
