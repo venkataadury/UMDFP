@@ -318,6 +318,22 @@ static std::map<std::string, UMDMolecule> drainUMDReader(UMDReader& reader)
     }
     return molecules;
 }
+static long countMoleculesInUMF(const std::string& filename)
+{
+    UMFReader reader(filename);
+    long count=0;
+    while(!reader.hasEnded())
+    {
+        try
+        {
+            reader.skipMolecule();
+            count++;
+        }
+        catch(const MoleculeDataEndedException& e) {break;}
+    }
+    std::cout << "Counted " << count << " molecules in UMF file " << filename << "\n";
+    return count;
+}
 
 static std::vector<std::vector<float>> invertMatrix(const std::vector<std::vector<float>>& matrix)
 {

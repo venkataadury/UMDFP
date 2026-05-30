@@ -275,17 +275,17 @@ public:
         return mySize;
     }
 
-    void summary() const
+    void summary(std::ostream& os=std::cout) const
     {
-        std::cout << "Molecule: " << name << ", SMILES: " << std::string((char*)smiles.getData()) << ", Atoms: " << atoms.size() << ", Bonds: " << bonds.size() << std::endl;
+        os << "Molecule: " << name << ", SMILES: " << std::string((char*)smiles.getData()) << ", Atoms: " << atoms.size() << ", Bonds: " << bonds.size() << std::endl;
         for(int i=0;i<atoms.size();i++)
         {
             const UMDAtomData& atom_data = atoms[i].getData();
-            std::cout << "  Atom " << i << ": " << atom_data.element << " (" << atom_data.x << ", " << atom_data.y << ", " << atom_data.z << "), Charge: " << atom_data.charge << ", Hybridization: " << atom_data.hybridization << ", Aromatic: " << (atom_data.aromatic ? "Yes" : "No") << std::endl;
+            os << "  Atom " << i << ": " << atom_data.element << " (" << atom_data.x << ", " << atom_data.y << ", " << atom_data.z << "), Charge: " << atom_data.charge << ", Hybridization: " << atom_data.hybridization << ", Aromatic: " << (atom_data.aromatic ? "Yes" : "No") << std::endl;
         }
         for(int i=0;i<bonds.size();i++)        {
             const UMDBondData& bond_data = bonds[i].getData();
-            std::cout << "  Bond " << i << ": Atoms " << bond_data.atom1 << " - " << bond_data.atom2 << ", Type: " << bond_data.bond_type << std::endl; 
+            os << "  Bond " << i << ": Atoms " << bond_data.atom1 << " - " << bond_data.atom2 << ", Type: " << bond_data.bond_type << std::endl; 
         }
     }
 
@@ -580,15 +580,15 @@ public:
     inline std::string getNextMoleculeSMILES() const {return current_header.smiles;}
     inline bool hasPointerFile() const {return has_pointer;}
 
-    void dumpHeader()
+    void dumpHeader(std::ostream& os=std::cout) const
     {
-        std::cout << "Next molecule size: " << current_header.size << " bytes" << std::endl;
-        std::cout << "Next 256 molecules size: " << current_header.lookahead_256_size << " bytes" << std::endl;
-        std::cout << "Next 65536 molecules size: " << current_header.lookahead_65536_size << " bytes" << std::endl;
-        std::cout << "Next molecule number of atoms: " << current_header.natoms << std::endl;
-        std::cout << "Next molecule number of bonds: " << current_header.nbonds << std::endl;
-        std::cout << "Next molecule name: " << current_header.name << std::endl;
-        std::cout << "Next molecule SMILES: " << current_header.smiles << std::endl;
+        os << "Next molecule size: " << current_header.size << " bytes" << std::endl;
+        os << "Next 256 molecules size: " << current_header.lookahead_256_size << " bytes" << std::endl;
+        os << "Next 65536 molecules size: " << current_header.lookahead_65536_size << " bytes" << std::endl;
+        os << "Next molecule number of atoms: " << current_header.natoms << std::endl;
+        os << "Next molecule number of bonds: " << current_header.nbonds << std::endl;
+        os << "Next molecule name: " << current_header.name << std::endl;
+        os << "Next molecule SMILES: " << current_header.smiles << std::endl;
     }
 
     void skipMolecule(unsigned long n=1)
