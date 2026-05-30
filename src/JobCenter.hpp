@@ -46,13 +46,18 @@ public:
             return result;
         }
 
-        if(value.size()==1) return result+"\"" + value[0] + "\"";
+        if(value.size()==1)
+        {
+            if(value[0].length()>0) return result+"\"" + value[0] + "\"";
+            else return result+"null";
+        }
         else
         {
             result += "[";
             for(size_t i=0;i<value.size();i++)
             {
-                result += "\"" + value[i] + "\"";
+                if(value[i].length()>0) result += "\"" + value[i] + "\"";
+                else result += "null";
                 if(i<value.size()-1) result += ",";
             }
             result += "]";
@@ -159,11 +164,13 @@ template<class T=JobOutput> class Job
         const std::string name;
         std::ostream* output_stream=&std::cout;
         std::ostream* error_stream=&std::cerr;
+        bool write_json=false;
     public:
         Job(std::string name) : name(name)
         {
             // Ensure that T is a subclass of JobOutput
             static_assert(std::is_base_of<JobOutput, T>::value, "Template parameter T must be a subclass of JobOutput");
+            write_json=false;
         }
         virtual ~Job() {}
     protected:
@@ -176,6 +183,8 @@ template<class T=JobOutput> class Job
                 bool match=false;
                 if(arg=="-silent") {this->makeSilent(); match=true;}
                 else if(arg=="-hide_errors") {this->hideErrors(); match=true;}
+                else if(arg=="-json") {this->enableJSONOutput(); match=true;}
+                else if(arg=="-nojson") {this->disableJSONOutput(); match=true;}
                 else if(arg=="-help" || arg=="--help" || arg=="-h") {match=true; std::cerr << this->getUsageString() << "\n"; return USER_EXIT;}
                 if(match)
                 {
@@ -196,12 +205,15 @@ template<class T=JobOutput> class Job
             
             T* ret=this->execute(argc, argv);
             if(ret->getExitCode()==USAGE_ERROR) *error_stream << this->getUsageString() << "\n";
+            if(write_json && ret->getExitCode()==STANDARD_SUCCESS) ret->toJSON(std::cout);
             return ret;
         }
         inline const std::string& getName() const {return name;}
 
         inline void setOutputStream(std::ostream& out) {output_stream=&out;}
         inline void setErrorStream(std::ostream& err) {error_stream=&err;}
+        inline void enableJSONOutput() {write_json=true;}
+        inline void disableJSONOutput() {write_json=false;}
         inline void makeSilent()
         {
             std::ofstream* devNull=new std::ofstream("/dev/null");
@@ -289,6 +301,8 @@ class UMFDumpJob : public Job<UMFJobOutput>
                 return new UMFJobOutput(FILE_NOT_FOUND);
             }
             else infile.close();
+            UMFJobOutput* job_output = new UMFJobOutput(STANDARD_SUCCESS);
+            job_output->store("format", output_fmt);
             
             *output_stream << "Chosen format: "<<output_fmt<<"\n";
             bool subdir=false;
@@ -298,12 +312,15 @@ class UMFDumpJob : public Job<UMFJobOutput>
                 else *output_stream << "Will write each molecule in a new file\n";
             }
             if(block_size>0) num_entries=countMoleculesInUMF(umf_file);
-            long mols_per_block=(block_size>0 && num_entries>0)?(num_entries/block_size + (num_entries%block_size==0?0:1)):(-1);
+            long mols_per_block=(block_size>0 && num_entries>0)?(num_entries/block_size + (num_entries%block_size==0?0:1)):-1;
             if(mols_per_block<0 && block_size>0)
             {
                 *error_stream << "Invalid block size or unable to count number of entries in UMF file. Please check the -b flag and ensure that the UMF file is valid and not corrupted." << "\n";
+                delete job_output;
                 return new UMFJobOutput(LOGIC_ERROR);
             }
+            else if(mols_per_block>0) job_output->store("mols_per_block", std::to_string(mols_per_block));
+
             std::string prefix = dump_file.substr(0, dump_file.find_last_of('.'));
             std::string old_prefix=prefix;
             std::string open_file;
@@ -311,19 +328,29 @@ class UMFDumpJob : public Job<UMFJobOutput>
             {
                 outfile.open(dump_file);
                 open_file=dump_file;
+                job_output->store("output_file", dump_file);
+                job_output->store("block_folder_prefix", ""); // No block folder since we're not splitting into blocks
+                job_output->store("output_file_prefix", ""); // No prefix since we're not splitting into separate files for each molecule or block
             }
             else if(split && block_size>0)
             {
-                std::string subdir_name = prefix + "_blocks_0";
+                std::string subdir_name = prefix + "_blocks";
+                job_output->store("block_folder_prefix", subdir_name);
+                subdir_name+="_0";
+                job_output->store("output_file", ""); // No single output file since we're splitting into multiple files
+
+
                 if(!std::filesystem::exists(subdir_name))
                 {
                     if(!std::filesystem::create_directory(subdir_name))
                     {
                         *error_stream << "Failed to create subdirectory for blocks: " << subdir_name << "\n";
+                        delete job_output;
                         return new UMFJobOutput(IO_ERROR);
                     }
                 }
                 old_prefix= prefix;
+                job_output->store("output_file_prefix", prefix.find_last_of("/\\")+1);
                 prefix=subdir_name+"/"+(prefix.substr(prefix.find_last_of("/\\")+1));
                 *output_stream << "\tPrefix: "<< prefix << "\n";
                 outfile.open(prefix+"_0."+output_fmt);
@@ -333,6 +360,9 @@ class UMFDumpJob : public Job<UMFJobOutput>
             {
                 outfile.open(prefix+"_0."+output_fmt);
                 open_file=prefix+"_0."+output_fmt;
+                job_output->store("output_file_prefix", prefix+"_0."+output_fmt);
+                job_output->store("block_folder_prefix", ""); // No block folder since we're not splitting into blocks
+                job_output->store("output_file", "");
             }
             if(!outfile.good())
             {
@@ -349,7 +379,7 @@ class UMFDumpJob : public Job<UMFJobOutput>
             }
             else *output_stream << "Pointer file found as '"<<umf_file<<"p'\n";
 
-            reader.dumpHeader();
+            reader.dumpHeader(*output_stream);
             *output_stream << "Writing all molecules ... "; output_stream->flush();
             long long total_mols=0; // Start at 1 since we already read the first molecule
             long long total_skip=0;
@@ -379,6 +409,7 @@ class UMFDumpJob : public Job<UMFJobOutput>
                             if(!std::filesystem::create_directory(subdir_name))
                             {
                                 *error_stream << "Failed to create subdirectory for blocks: " << subdir_name << "\n";
+                                delete job_output;
                                 return new UMFJobOutput(1);
                             }
                         }
@@ -410,7 +441,9 @@ class UMFDumpJob : public Job<UMFJobOutput>
             *output_stream << "done\n";
             *output_stream << "Total molecules read: " << total_mols << std::endl;
             *output_stream << "Total molecules skipped: "<<total_skip << std::endl;
-            return new UMFJobOutput(0);
+            job_output->store("total_read", std::to_string(total_mols));
+            job_output->store("total_skipped", std::to_string(total_skip));
+            return job_output;
         }
 };
 
