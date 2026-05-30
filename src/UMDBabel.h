@@ -279,7 +279,8 @@ public:
 
         remarks << "REMARK AtomSequence ";
         for(int aind : written_sequence) remarks << aind << " "; remarks << "\n";        
-        _out <<"MODEL 1\n"<< remarks.str() << out.str() <<"ENDMDL\n"; 
+        //_out <<"MODEL 1\n"<< remarks.str() << out.str() <<"ENDMDL\n"; 
+        _out << remarks.str() << out.str();
         return _out;
     }
     std::ostream& formatMolecule_deprecated(const UMDMolecule& molecule, std::ostream& _out, const std::string& charge_method="none") const

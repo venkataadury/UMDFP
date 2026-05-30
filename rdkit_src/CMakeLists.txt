@@ -11,7 +11,7 @@ find_package(OpenMP)
 
 add_executable(umf-sim-query src/SimilarityQueryCLI.cpp)
 target_include_directories(umf-sim-query PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
-target_compile_options(umf-sim-query PRIVATE -O3)
+target_compile_options(umf-sim-query PRIVATE -O3 -g)
 if(OpenMP_CXX_FOUND)
 	target_link_libraries(umf-sim-query -static-libgcc -static-libstdc++ RDKit::GraphMol RDKit::SmilesParse RDKit::Fingerprints RDKit::DataStructs RDKit::GraphMol OpenMP::OpenMP_CXX)
 	target_compile_definitions(umf-sim-query PRIVATE ENABLE_CPU_PARALLELISM)

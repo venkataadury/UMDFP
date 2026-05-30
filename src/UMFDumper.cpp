@@ -1,8 +1,7 @@
 #include "JobCenter.hpp"
 
-static std::ofstream outfile;
 int main(int argc, char** argv)
 {
-    UMFJobOutput* output = UMFDumpJob().run(argc, argv);
+    UMFJobOutput* output = UMFDumpJob(std::string(argv[0])).run(argc, argv);
     return output->getExitCode();
 }

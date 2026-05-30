@@ -524,9 +524,9 @@ private:
     void _verifySignature()
     {
         char signature[33];
-        fread(signature, sizeof(char), 32, file);
+        int read_check=fread(signature, sizeof(char), 32, file);
         signature[32]='\0';
-        if(strcmp(signature, UMF_SIGNATURE)!=0)
+        if(strcmp(signature, UMF_SIGNATURE)!=0 || read_check!=32)
         {
             std::cerr << "Error: Invalid UMF file signature. Expected '" << UMF_SIGNATURE << "', but found '" << signature << "'. The file may be corrupted or not a valid UMF file.\n";
             throw std::runtime_error("Invalid UMF file signature");
@@ -535,12 +535,12 @@ private:
     void _verifyAndReadHeader()
     {
         char header[7];
-        fread(header, sizeof(char), 6, file);
+        int read_check=fread(header, sizeof(char), 6, file);
         header[6] = '\0';
         bool warned=false;
         while (strcmp(header, UMFHeader) != 0)
         {
-            if (feof(file)) throw NoHeaderRemainingException();
+            if (feof(file) || read_check != 6) throw NoHeaderRemainingException();
             if(!warned)
             {
                 std::cerr << "Warning: UMF header not found at expected position, attempting to resync..." << std::endl;
@@ -549,18 +549,18 @@ private:
             }
             // Shift the header by one byte and read the next byte
             push_string(header, 7);
-            fread(header + 5, sizeof(char), 1, file);
+            read_check=fread(header + 5, sizeof(char), 1, file);
         }
         fgetpos(file, &ref); // Store the position of the start of the molecule block for potential future use (e.g., seeking back to it if needed)
         
         // Read the sizes of the molecule block and look-ahead blocks
-        fread(&current_header.size, sizeof(int), 1, file);
-        fread(&current_header.lookahead_256_size, sizeof(int), 1, file);
-        fread(&current_header.lookahead_65536_size, sizeof(unsigned long), 1, file);
-        
+        assert(fread(&current_header.size, sizeof(int), 1, file)>0);
+        assert(fread(&current_header.lookahead_256_size, sizeof(int), 1, file)>0);
+        assert(fread(&current_header.lookahead_65536_size, sizeof(unsigned long), 1, file)>0);
+
         // Read the number of atoms and bonds
-        fread(&current_header.natoms, sizeof(int), 1, file);
-        fread(&current_header.nbonds, sizeof(int), 1, file);
+        assert(fread(&current_header.natoms, sizeof(int), 1, file)>0);
+        assert(fread(&current_header.nbonds, sizeof(int), 1, file)>0);
 
         //Read name character-by-character until '\0' is found (since name can be of variable length)
         char c;
@@ -637,7 +637,7 @@ public:
         for(int i=0;i<current_header.natoms;i++)
         {
             UMDAtomData atom_data;
-            fread(&atom_data, sizeof(UMDAtomData), 1, file);
+            assert(fread(&atom_data, sizeof(UMDAtomData), 1, file)>0);
             UMDAtom atom(atom_data);
             lines.push_back(std::to_string(i)+" "+std::string(atom.getData().element)+" "+std::to_string(atom.getData().x)+" "+std::to_string(atom.getData().y)+" "+std::to_string(atom.getData().z)+" "+std::to_string(atom.getData().charge)+" "+std::to_string(atom.getData().hybridization)+" "+std::to_string(atom.getData().aromatic)+" "+std::to_string(atom.getData().formal_charge));
         }
@@ -646,7 +646,7 @@ public:
         for(int i=0;i<current_header.nbonds;i++)
         {
             UMDBondData bond_data;
-            fread(&bond_data, sizeof(UMDBondData), 1, file);
+            assert(fread(&bond_data, sizeof(UMDBondData), 1, file)>0);
             UMDBond bond(bond_data);
             lines.push_back(std::to_string(i)+" "+std::to_string(bond.getData().atom1)+" "+std::to_string(bond.getData().atom2)+" "+std::to_string(bond.getData().bond_type));
         }
@@ -655,9 +655,11 @@ public:
         int remaining_bytes = current_header.size - sizeof(char)*strlen(UMFHeader) - sizeof(int)*2 - sizeof(unsigned long) - 2*sizeof(int) - (current_header.name.size()+1)*sizeof(char) - current_header.smiles.size() - current_header.natoms*sizeof(UMDAtomData) - current_header.nbonds*sizeof(UMDBondData);
         
         char* extras_data = new char[remaining_bytes];
-        fread(extras_data, sizeof(char), current_header.size - sizeof(char)*strlen(UMFHeader) - sizeof(int)*2 - sizeof(unsigned long) - 2*sizeof(int) - (current_header.name.size()+1)*sizeof(char) - current_header.smiles.size() - current_header.natoms*sizeof(UMDAtomData) - current_header.nbonds*sizeof(UMDBondData), file);
-        std::string extras_str(extras_data, current_header.size - sizeof(char)*strlen(UMFHeader) - sizeof(int)*2 - sizeof(unsigned long) - 2*sizeof(int) - (current_header.name.size()+1)*sizeof(char) - current_header.smiles.size() - current_header.natoms*sizeof(UMDAtomData) - current_header.nbonds*sizeof(UMDBondData));
-        lines.push_back(extras_str);
+        if(fread(extras_data, sizeof(char), current_header.size - sizeof(char)*strlen(UMFHeader) - sizeof(int)*2 - sizeof(unsigned long) - 2*sizeof(int) - (current_header.name.size()+1)*sizeof(char) - current_header.smiles.size() - current_header.natoms*sizeof(UMDAtomData) - current_header.nbonds*sizeof(UMDBondData), file))
+        {
+            std::string extras_str(extras_data, current_header.size - sizeof(char)*strlen(UMFHeader) - sizeof(int)*2 - sizeof(unsigned long) - 2*sizeof(int) - (current_header.name.size()+1)*sizeof(char) - current_header.smiles.size() - current_header.natoms*sizeof(UMDAtomData) - current_header.nbonds*sizeof(UMDBondData));
+            lines.push_back(extras_str);
+        }
         delete[] extras_data;
         lines.push_back("END");
         

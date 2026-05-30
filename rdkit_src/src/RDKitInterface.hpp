@@ -13,7 +13,7 @@
 #include <DataStructs/BitVectUtils.h>
 #include <GraphMol/Fingerprints/FingerprintGenerator.h>
 #include <GraphMol/Fingerprints/MorganGenerator.h>
-#include "UMDFP.h"
+#include "JobCenter.hpp"
 #include <cstdint>
 
 #define RDKIT_FINGERPRINT_BITS 2048
@@ -263,4 +263,104 @@ template<int N> static std::vector<std::pair<unsigned long long, float>> similar
 
     return results;
 }
+
+class SimilarityQueryJobOutput : public JobOutput
+{
+public:
+        SimilarityQueryJobOutput() : SimilarityQueryJobOutput(0) {}
+        SimilarityQueryJobOutput(int exit_status)  {exit_code=exit_status;}
+
+        inline int getExitCode() const {return exit_code;}
+};
+
+class SimilarityQueryJob : public Job<SimilarityQueryJobOutput>
+{
+public:
+    SimilarityQueryJob() : Job("Similarity Query") {}
+    SimilarityQueryJob(std::string name) : Job(name) {}
+
+protected:
+    inline const std::string& getUsageString() const override
+    {
+        static const std::string usage = "Usage: " + this->getName() + " <UMF file> <Query Smiles> [threshold (default: 0.7)] [top_k (default: all)]\n";
+        return usage;
+    }
+
+    SimilarityQueryJobOutput* execute(int argc, char** argv) override
+    {
+        if(argc<3) return new SimilarityQueryJobOutput(USAGE_ERROR);
+        
+        std::string umf_filename = argv[1];
+        std::string query_smiles_file = argv[2];
+        float threshold = (argc > 3) ? std::stof(argv[3]) : 0.7;
+        size_t top_k = (argc > 4) ? std::stoull(argv[4]) : -1;
+
+        SimilarityQueryJobOutput* output = new SimilarityQueryJobOutput(0);
+
+        std::ifstream qsmi(query_smiles_file);
+        if(!qsmi.good())
+        {
+            *error_stream << "Error opening query smiles file "<<query_smiles_file<<"\n";
+            delete output;
+            return new SimilarityQueryJobOutput(FILE_NOT_FOUND);
+        }
+        
+        while(!qsmi.eof())
+        {
+            std::string line;
+            if(!std::getline(qsmi,line)) break;
+            std::stringstream lss(line);
+            std::string query_smiles,name;
+            lss >> query_smiles >> name;
+            
+            RDKitMolecule query_mol(query_smiles);
+            ExplicitBitVect* query_fp = query_mol.getMorganFingerprint();
+            if(!query_fp)
+            {
+                *error_stream << "Error computing fingerprint for query molecule" << std::endl;
+                delete output;
+                return new SimilarityQueryJobOutput(PROCESSING_ERROR);
+            }
+
+            try
+            {
+                std::ifstream test_file(umf_filename+"b", std::ios::binary);
+                if(!test_file) {*error_stream << "Fingerprint file not found" << std::endl; throw std::runtime_error("Fingerprint file not found");}
+                else test_file.close();
+            }
+            catch(const std::exception& e)
+            {
+                *output_stream << "Building the fingerprint file ... "; output_stream->flush();
+                buildUMFFingerprintFile(umf_filename);
+                *output_stream << "Done\n\n";
+            }
+
+            CPPBitVector query_cpp_fp(query_fp);
+            std::ifstream fingerprint_file(umf_filename+"b", std::ios::binary);
+            if(!fingerprint_file)
+            {
+                *error_stream << "Error opening fingerprint file for reading: " << umf_filename+"b" << std::endl;
+                delete output;
+                return new SimilarityQueryJobOutput(FILE_NOT_FOUND | IO_ERROR);
+            }
+            fingerprint_file.close();
+
+            std::string fpfile=umf_filename+"b";
+            std::string pfile=umf_filename+"p";
+            std::vector<std::pair<unsigned long long, float>> results = similaritySearch<RDKIT_FINGERPRINT_BITS>(fpfile, query_cpp_fp, threshold, top_k);
+            *output_stream << name << " " << results.size() << "\t";
+            for(const auto& [index, similarity] : results)
+            {
+                std::pair<std::string, file_pointer> query_result = getQueryByIndex(pfile, index);
+                //std::cout << "Index: " << index << ", Name: " << query_result.first << ", Similarity: " << similarity << std::endl;
+                *output_stream << query_result.first << " " << similarity << " ";
+                std::vector<std::string> record={std::to_string(index), query_result.first, std::to_string(similarity)};
+                output->store("results", record);
+            }
+            *output_stream << "\n";
+        }
+        return output;
+    }
+};
+
 #endif
