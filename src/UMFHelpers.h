@@ -331,7 +331,7 @@ static long countMoleculesInUMF(const std::string& filename)
         }
         catch(const MoleculeDataEndedException& e) {break;}
     }
-    std::cout << "Counted " << count << " molecules in UMF file " << filename << "\n";
+    //std::cout << "Counted " << count << " molecules in UMF file " << filename << "\n";
     return count;
 }
 

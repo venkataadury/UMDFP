@@ -350,8 +350,11 @@ class UMFDumpJob : public Job<UMFJobOutput>
                     }
                 }
                 old_prefix= prefix;
-                job_output->store("output_file_prefix", prefix.find_last_of("/\\")+1);
-                prefix=subdir_name+"/"+(prefix.substr(prefix.find_last_of("/\\")+1));
+                std::string output_file_prefix="";
+                if(prefix.find_last_of("/\\")!=std::string::npos) output_file_prefix=prefix.substr(prefix.find_last_of("/\\")+1);
+                else output_file_prefix=prefix;
+                job_output->store("output_file_prefix", output_file_prefix);
+                prefix=subdir_name+"/"+prefix;
                 *output_stream << "\tPrefix: "<< prefix << "\n";
                 outfile.open(prefix+"_0."+output_fmt);
                 open_file=prefix+"_0."+output_fmt;
@@ -360,7 +363,7 @@ class UMFDumpJob : public Job<UMFJobOutput>
             {
                 outfile.open(prefix+"_0."+output_fmt);
                 open_file=prefix+"_0."+output_fmt;
-                job_output->store("output_file_prefix", prefix+"_0."+output_fmt);
+                job_output->store("output_file_prefix", prefix);
                 job_output->store("block_folder_prefix", ""); // No block folder since we're not splitting into blocks
                 job_output->store("output_file", "");
             }
@@ -413,7 +416,10 @@ class UMFDumpJob : public Job<UMFJobOutput>
                                 return new UMFJobOutput(1);
                             }
                         }
-                        prefix=subdir_name+"/"+(old_prefix.substr(old_prefix.find_last_of("/\\")+1));
+                        std::string output_file_prefix="";
+                        if(old_prefix.find_last_of("/\\")!=std::string::npos) output_file_prefix=old_prefix.substr(old_prefix.find_last_of("/\\")+1);
+                        else output_file_prefix=old_prefix;
+                        prefix=subdir_name+"/"+output_file_prefix;
                     }
                     else
                     {
