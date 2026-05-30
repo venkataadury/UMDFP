@@ -18,6 +18,7 @@
 class JobOutput;
 class JSONEntry
 {
+    std::string key="";
     std::vector<std::string> value;
     std::vector<JSONEntry*> nested_objects;
 public:
@@ -27,13 +28,16 @@ public:
     
     std::string toString() const
     {
+        std::string result = key; if(!result.empty()) result = "\""+result+"\": ";
         if(nested_objects.size())
         {
-            std::string result = "{\n";
-            if(nested_objects.size()>1) result = "[";
+            if(nested_objects.size()>1) result += "[";
+            else result+= "{\n";
             for(size_t i=0;i<nested_objects.size();i++)
             {
+                if(nested_objects[i]->nested_objects.size() || nested_objects[i]->key!="") result+="{";
                 result += nested_objects[i]->toString();
+                if(nested_objects[i]->nested_objects.size() || nested_objects[i]->key!="") result+="}";
                 if(i<nested_objects.size()-1) result += ",";
                 result += "\n";
             }
@@ -42,10 +46,10 @@ public:
             return result;
         }
 
-        if(value.size()==1) return "\"" + value[0] + "\"";
+        if(value.size()==1) return result+"\"" + value[0] + "\"";
         else
         {
-            std::string result = "[";
+            result += "[";
             for(size_t i=0;i<value.size();i++)
             {
                 result += "\"" + value[i] + "\"";
@@ -58,6 +62,9 @@ public:
 
     inline void addNestedObject(JSONEntry* obj) {nested_objects.push_back(obj);}
     inline void addValue(std::string val) {value.push_back(val);}
+protected:
+    inline void assignKey(std::string key) {this->key=key;}
+    inline void clearKey() {this->key="";}
 
     friend class JobOutput;
 };
@@ -77,7 +84,8 @@ class JobOutput
             int count=0;
             for(const auto& kv : key_value_pairs)
             {
-                out << "  \"" << kv.first << "\": " << kv.second->toString() << "";
+                //out << "  \"" << kv.first << "\": " << kv.second->toString() << "";
+                out << kv.second->toString()<<"";
                 if(count<key_value_pairs.size()-1) out << ",";
                 out << "\n";
                 count++;
@@ -89,7 +97,11 @@ class JobOutput
         inline void store(const std::string& key, const std::string& value)
         {
             if(this->contains(key)) key_value_pairs[key]->addValue(value);
-            else key_value_pairs[key]=new JSONEntry(value);
+            else
+            {
+                key_value_pairs[key]=new JSONEntry(value);
+                key_value_pairs[key]->assignKey(key);
+            }
         }
         inline void store(const std::string& key, const std::vector<std::string>& value)
         {
@@ -98,11 +110,18 @@ class JobOutput
                 if(key_value_pairs[key]->nested_objects.size()) key_value_pairs[key]->addNestedObject(new JSONEntry(value));
                 else
                 {
+                    std::string old_key=key_value_pairs[key]->key;
+                    key_value_pairs[key]->clearKey();
                     std::vector<JSONEntry*> nested_objs={key_value_pairs[key],new JSONEntry(value)};
                     key_value_pairs[key]=new JSONEntry(nested_objs);
+                    key_value_pairs[key]->assignKey(old_key);
                 }
             }
-            else key_value_pairs[key]=new JSONEntry(value);
+            else
+            {
+                key_value_pairs[key]=new JSONEntry(value);
+                key_value_pairs[key]->assignKey(key);
+            }
         }
         inline void store(const std::string& key, const std::vector<JSONEntry*>& value)
         {
@@ -111,11 +130,21 @@ class JobOutput
                 throw std::logic_error("Cannot store a nested object in a key that already contains a non-nested value");
             }
             key_value_pairs[key]=new JSONEntry(value);
+            key_value_pairs[key]->assignKey(key);
         }
         inline void store(const std::string& key, int value) {this->store(key, std::to_string(value));}
         inline JSONEntry* get(const std::string& key) const {return key_value_pairs.at(key);}
         inline std::string getString(const std::string& key) const {return key_value_pairs.at(key)->toString();}
         inline bool contains(const std::string& key) const {return key_value_pairs.find(key)!=key_value_pairs.end();}
+
+        void wrap(const std::string& wrapper_key)
+        {
+            std::vector<JSONEntry*> nested_objs;
+            for(auto& kv : key_value_pairs) nested_objs.push_back(kv.second);
+            key_value_pairs=std::map<std::string, JSONEntry*>();
+            key_value_pairs[wrapper_key]=new JSONEntry(nested_objs);
+            key_value_pairs[wrapper_key]->assignKey(wrapper_key);
+        }
 };
 
 static std::ostream& operator<<(std::ostream& out, const JobOutput& jo)

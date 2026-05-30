@@ -355,10 +355,11 @@ protected:
                 //std::cout << "Index: " << index << ", Name: " << query_result.first << ", Similarity: " << similarity << std::endl;
                 *output_stream << query_result.first << " " << similarity << " ";
                 std::vector<std::string> record={std::to_string(index), query_result.first, std::to_string(similarity)};
-                output->store("results", record);
+                output->store(name, record);
             }
             *output_stream << "\n";
         }
+        output->wrap("results");
         return output;
     }
 };
