@@ -141,6 +141,7 @@ class JobOutput
         inline JSONEntry* get(const std::string& key) const {return key_value_pairs.at(key);}
         inline std::string getString(const std::string& key) const {return key_value_pairs.at(key)->toString();}
         inline bool contains(const std::string& key) const {return key_value_pairs.find(key)!=key_value_pairs.end();}
+        inline void setExitCode(int code) {exit_code=code;}
 
         void wrap(const std::string& wrapper_key)
         {
@@ -205,7 +206,11 @@ template<class T=JobOutput> class Job
             
             T* ret=this->execute(argc, argv);
             if(ret->getExitCode()==USAGE_ERROR) *error_stream << this->getUsageString() << "\n";
-            if(write_json && ret->getExitCode()==STANDARD_SUCCESS) ret->toJSON(std::cout);
+            if(write_json)
+            {
+                if(ret->getExitCode()==STANDARD_SUCCESS) ret->toJSON(std::cout);
+                else ret->toJSON(std::cerr);
+            }
             return ret;
         }
         inline const std::string& getName() const {return name;}
@@ -316,10 +321,14 @@ class UMFDumpJob : public Job<UMFJobOutput>
             if(mols_per_block<0 && block_size>0)
             {
                 *error_stream << "Invalid block size or unable to count number of entries in UMF file. Please check the -b flag and ensure that the UMF file is valid and not corrupted." << "\n";
-                delete job_output;
-                return new UMFJobOutput(LOGIC_ERROR);
+                job_output->setExitCode(LOGIC_ERROR);
+                return job_output;
             }
-            else if(mols_per_block>0) job_output->store("mols_per_block", std::to_string(mols_per_block));
+            else if(mols_per_block>0)
+            {
+                job_output->store("mols_per_block", std::to_string(mols_per_block));
+                job_output->store("num_blocks", std::to_string(block_size));
+            }
 
             std::string prefix = dump_file.substr(0, dump_file.find_last_of('.'));
             std::string old_prefix=prefix;
@@ -339,22 +348,22 @@ class UMFDumpJob : public Job<UMFJobOutput>
                 subdir_name+="_0";
                 job_output->store("output_file", ""); // No single output file since we're splitting into multiple files
 
-
                 if(!std::filesystem::exists(subdir_name))
                 {
                     if(!std::filesystem::create_directory(subdir_name))
                     {
                         *error_stream << "Failed to create subdirectory for blocks: " << subdir_name << "\n";
-                        delete job_output;
-                        return new UMFJobOutput(IO_ERROR);
+                        job_output->setExitCode(IO_ERROR);
+                        return job_output;
                     }
                 }
+
                 old_prefix= prefix;
                 std::string output_file_prefix="";
                 if(prefix.find_last_of("/\\")!=std::string::npos) output_file_prefix=prefix.substr(prefix.find_last_of("/\\")+1);
                 else output_file_prefix=prefix;
                 job_output->store("output_file_prefix", output_file_prefix);
-                prefix=subdir_name+"/"+prefix;
+                prefix=subdir_name+"/"+output_file_prefix;
                 *output_stream << "\tPrefix: "<< prefix << "\n";
                 outfile.open(prefix+"_0."+output_fmt);
                 open_file=prefix+"_0."+output_fmt;
@@ -370,7 +379,8 @@ class UMFDumpJob : public Job<UMFJobOutput>
             if(!outfile.good())
             {
                 *error_stream << "Failed to open output file: " << open_file <<"\n";
-                return new UMFJobOutput(IO_ERROR);
+                job_output->setExitCode(IO_ERROR);
+                return job_output;
             }
 
             *output_stream << "Testing the UMF file\n";
@@ -412,8 +422,8 @@ class UMFDumpJob : public Job<UMFJobOutput>
                             if(!std::filesystem::create_directory(subdir_name))
                             {
                                 *error_stream << "Failed to create subdirectory for blocks: " << subdir_name << "\n";
-                                delete job_output;
-                                return new UMFJobOutput(1);
+                                job_output->setExitCode(IO_ERROR);
+                                return job_output;
                             }
                         }
                         std::string output_file_prefix="";
@@ -427,7 +437,8 @@ class UMFDumpJob : public Job<UMFJobOutput>
                         if(!outfile.good())
                         {
                             *error_stream << "Failed to open output file for block " << block_id << ": " << prefix+"_"+std::to_string(block_id)+"."+output_fmt<<"\n";
-                            return new UMFJobOutput(1);
+                            job_output->setExitCode(IO_ERROR);
+                            return job_output;
                         }
                     }
                 }
