@@ -532,6 +532,7 @@ protected:
                 UMDBond bond_data = next_mol.getBond(i);
                 if(bond_data.getBondType()>=8) throw std::runtime_error("Bad molecule: "+next_mol.getName());
             }
+            *output_stream << "Read molecule with name: "<<next_mol.getName()<<"\n";
         }
         *output_stream << "done\n";
         *output_stream << "Total molecules read: " << total_mols << std::endl;
