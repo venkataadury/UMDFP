@@ -199,10 +199,13 @@ static void buildUMFFingerprintFile(const std::string& umf_filename, std::string
 template<int N> static void _blockSimilarity(const CPPBitVector<N>* batch, const CPPBitVector<N>& query_fp, float threshold, std::vector<std::pair<unsigned long long, float>>& ret, int batch_filling, const std::string& similarity_metric="tanimoto", unsigned long long total_index=0)
 {
     #ifdef ENABLE_CPU_PARALLELISM
+    std::vector<std::vector<std::pair<unsigned long long, float>>> ret_;
+    for(int i=0;i<omp_get_max_threads();i++) ret_.push_back(std::vector<std::pair<unsigned long long, float>>());
     #pragma omp parallel for
     #endif
     for(size_t i=0;i<batch_filling;i++)
     {
+        int tid=omp_get_thread_num();
         float similarity;
         if(similarity_metric=="tanimoto")
             similarity = query_fp.jaccardSimilarity(batch[i]);
@@ -211,8 +214,18 @@ template<int N> static void _blockSimilarity(const CPPBitVector<N>* batch, const
             std::cerr << "Error: Unsupported similarity metric: " << similarity_metric << std::endl;
             throw std::runtime_error("Unsupported similarity metric");
         }
+        #ifdef ENABLE_CPU_PARALLELISM
+        ret_[tid].push_back({total_index + i, similarity});
+        #else
         if(similarity>=threshold) ret.push_back({total_index + i, similarity});
+        #endif
     }
+    #ifdef ENABLE_CPU_PARALLELISM
+    for(int i=0;i<omp_get_max_threads();i++)
+    {
+        for(std::pair<unsigned long long, float> d : ret_[i]) ret.push_back(d);
+    }
+    #endif
 }
 
 template<int N> static std::vector<std::pair<unsigned long long, float>> similaritySearch(const std::string& fingerprint_filename, const CPPBitVector<N>& query_fp, float threshold, size_t top_k=-1, int batch_size=4096, const std::string& similarity_metric="tanimoto")
