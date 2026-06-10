@@ -179,12 +179,15 @@ def get_args():
     parser.add_argument("-s", "--segment", type=int, default=-1, 
                         help="(Re)run a specific cut in a multi-CPU run. You will usually not need this")
     
-    # 5. Optional argument with a value (Default provided)
+    # 5. Scratch Directory (optional argument)
+    parser.add_argument("-w", "--scratch", type=str, default="./", 
+                        help="Scratch directory to write temporary file (such as blocks in CPU parallelism) to")
+    
+    # 6. Optional argument with a value (Default provided)
     parser.add_argument("-b", "--batch_size", type=int, default=4096, 
                         help="Number of SMILES to load into memory at once. (Default: 4096)")
 
-
-    # 6. Boolean flag (True if present, False if not)
+    # 7. Boolean flag (True if present, False if not)
     parser.add_argument("-f", "--force-overwrite", action="store_true",  help="Overwrite existing UMD files (if present)")
 
     return parser.parse_args()
@@ -196,6 +199,7 @@ def main():
     segment=int(args.segment)
     errfile=args.error
     bsize=args.batch_size
+    scratch_dir=args.scratch
     assert bsize>=cpus, "batch size must be greater than the number of CPUs used"
     
     outname=args.output
@@ -208,9 +212,8 @@ def main():
     errlog=open(errfile,"w")
     
     def process_block(seg):
-        
         if cpus>1:
-            o_filename=out_prefix+str(seg)+".umd"
+            o_filename=args.scratch+"/"+(out_prefix.split("/")[-1])+str(seg)+".umd"
         else:
             o_filename=outname
         
