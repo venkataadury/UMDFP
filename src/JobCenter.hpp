@@ -252,7 +252,7 @@ class UMFDumpJob : public Job<UMFJobOutput>
     protected:
         inline const std::string& getUsageString() const override
         {
-            static const std::string usage = "Usage: " + this->getName() + " <UMF file> [<Output file>] [-f Format (mol2/sdf/pdbqt/smi/umd)] [-s (separate files?)] [-b (blocks?)] [-k (skip mols)] [-l (write limit)] [-noh (no hydrogens?)]\n(Note that output file must appear before any optional arguments)\n";
+            static const std::string usage = "Usage: " + this->getName() + " <UMF file> [<Output file>] [-f Format (mol2/sdf/pdbqt/smi/umd)] [-s (separate files?) [-n (each file is named by the ligand?)]] [-b (blocks?)] [-k (skip mols)] [-l (write limit)] [-noh (no hydrogens?)]\n(Note that output file must appear before any optional arguments)\n";
             return usage;
         }
         UMFJobOutput* execute(int argc, char** argv) override
@@ -265,6 +265,7 @@ class UMFDumpJob : public Job<UMFJobOutput>
             std::string output_fmt="mol2";
             
             bool split=false;
+            bool ligand_name_file=false;
             long block_size=-1, num_entries=-1, write_limit=-1;
             long skip_mols=0;
             bool write_H=true;
@@ -273,6 +274,7 @@ class UMFDumpJob : public Job<UMFJobOutput>
                 std::string arg = argv[i];
                 if(arg=="-f" && i+1<argc) output_fmt = argv[++i];
                 else if(arg=="-s") split=true;
+                else if(arg=="-n") ligand_name_file=true;
                 else if(arg=="-b" && i+1<argc) block_size=std::stol(argv[++i]);
                 else if(arg=="-k" && i+1<argc) skip_mols=std::stol(argv[++i]);
                 else if(arg=="-l" && i+1<argc) write_limit=std::stol(argv[++i]);
@@ -366,7 +368,9 @@ class UMFDumpJob : public Job<UMFJobOutput>
                 if(prefix.find_last_of("/\\")!=std::string::npos) output_file_prefix=prefix.substr(prefix.find_last_of("/\\")+1);
                 else output_file_prefix=prefix;
                 job_output->store("output_file_prefix", output_file_prefix);
-                prefix=subdir_name+"/"+output_file_prefix;
+                if(!ligand_name_file) prefix=subdir_name+"/"+output_file_prefix;
+                else prefix=subdir_name;
+
                 *output_stream << "\tPrefix: "<< prefix << "\n";
                 outfile.open(prefix+"_0."+output_fmt);
                 open_file=prefix+"_0."+output_fmt;
@@ -432,7 +436,8 @@ class UMFDumpJob : public Job<UMFJobOutput>
                         std::string output_file_prefix="";
                         if(old_prefix.find_last_of("/\\")!=std::string::npos) output_file_prefix=old_prefix.substr(old_prefix.find_last_of("/\\")+1);
                         else output_file_prefix=old_prefix;
-                        prefix=subdir_name+"/"+output_file_prefix;
+                        if(!ligand_name_file) prefix=subdir_name+"/"+output_file_prefix;
+                        else prefix=subdir_name;
                     }
                     else
                     {
@@ -453,7 +458,11 @@ class UMFDumpJob : public Job<UMFJobOutput>
                     if(bond_data.getBondType()>=8) {*output_stream << "Skipping bad molecule: "<< next_mol.getName() << "\n"; flag=false; break; total_skip++;} //throw std::runtime_error("Bad molecule: "+next_mol.getName());
                 }
                 if(!flag) continue;
-                if(split) outfile.open(prefix+"_"+std::to_string(total_mols)+"."+output_fmt);
+                if(split)
+                {
+                    if(!ligand_name_file) outfile.open(prefix+"_"+std::to_string(total_mols)+"."+output_fmt);
+                    else outfile.open(prefix+"/"+next_mol.getName()+"."+output_fmt);
+                }
                 formatter->formatMolecule(next_mol, outfile, "GASTEIGER");
                 total_mols++;
             }
