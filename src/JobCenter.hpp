@@ -338,6 +338,9 @@ class UMFDumpJob : public Job<UMFJobOutput>
             std::string prefix = dump_file.substr(0, dump_file.find_last_of('.'));
             std::string old_prefix=prefix;
             std::string open_file;
+            if(ligand_name_file && !split) *error_stream << "Warning: The -n flag is ignored since -s is not specified. Each molecule will be written to a single file with the prefix '" << prefix << "'\n";
+            else if(ligand_name_file && split) prefix=prefix.substr(0, prefix.find_last_of("/\\")+1); // If the user specified -n and -s, then we will write each molecule to a separate file in the same directory as the output file, so we need to strip the filename from the prefix
+            
             if(!split && block_size<=0)
             {
                 outfile.open(dump_file);
@@ -377,8 +380,16 @@ class UMFDumpJob : public Job<UMFJobOutput>
             }
             else
             {
-                outfile.open(prefix+"_0."+output_fmt);
-                open_file=prefix+"_0."+output_fmt;
+                if(!ligand_name_file)
+                {
+                    outfile.open(prefix+"_0."+output_fmt);
+                    open_file=prefix+"_0."+output_fmt;
+                }
+                else
+                {
+                    outfile.open("/dev/null"); // Open a dummy file since we will be writing each molecule to a separate file named by the ligand
+                    open_file="/dev/null";
+                }
                 job_output->store("output_file_prefix", prefix);
                 job_output->store("block_folder_prefix", ""); // No block folder since we're not splitting into blocks
                 job_output->store("output_file", "");
