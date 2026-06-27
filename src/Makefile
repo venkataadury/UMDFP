@@ -12,8 +12,8 @@ CXXFLAGS = -g -O3 -I. -std=c++17
 LDFLAGS = 
 
 # Source files and corresponding executables
-SOURCES = UMDcompressor.cpp UMFParser.cpp UMFQuery.cpp UMFChecker.cpp UMFDumper.cpp UMDBasedConverter.cpp
-EXECUTABLES = umfgen umfparser-live umfparser umfchecker umfdump umd-fmtconv
+SOURCES = UMDcompressor.cpp UMFParser.cpp UMFQuery.cpp UMFChecker.cpp UMFDumper.cpp UMDBasedConverter.cpp UMFPropExt.cpp
+EXECUTABLES = umfgen umfparser-live umfparser umfchecker umfdump umd-fmtconv umfpropext
 
 # Object files
 OBJECTS = $(SOURCES:.cpp=.o)
@@ -33,6 +33,8 @@ umfchecker: UMFChecker.o
 umfdump: UMFDumper.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 umd-fmtconv: UMDBasedConverter.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+umfpropext: UMFPropExt.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 # Rule to compile source files into object files

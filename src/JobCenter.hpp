@@ -917,4 +917,172 @@ protected:
         return new UMDBasedConvJobOutput(0);
     }
 };
+
+class UMFPropertyExtractorJobOutput : public JobOutput
+{
+    public:
+        UMFPropertyExtractorJobOutput() : UMFPropertyExtractorJobOutput(0) {}
+        UMFPropertyExtractorJobOutput(int exit_status)  {exit_code=exit_status;}
+
+        inline int getExitCode() const {return exit_code;}
+};
+
+class UMFPropertyExtractorJob : public Job<UMFPropertyExtractorJobOutput>
+{
+protected:
+    bool write_charge=false, write_smiles=false;
+    bool write_num_atoms=false, write_num_bonds=false;
+public:
+    UMFPropertyExtractorJob() : Job("Extract ligand properties from UMF") {}
+    UMFPropertyExtractorJob(std::string name) : Job(name) {}
+protected:
+    inline const std::string& getUsageString() const override
+    {
+        static const std::string usage = "Usage: " + this->getName() + " <UMF file> [-q (--charge) ligand net charge] [-i (--smiles) ligand SMILES string] [-n (--num_atoms) number of atoms] [-b --num_bonds number of bonds] [-o (--output) output file path] [-f (--from_file) input from this file]\n";
+        return usage;
+    }
+
+    UMFPropertyExtractorJobOutput* execute(int argc, char** argv) override
+    {
+        if(argc<2) return new UMFPropertyExtractorJobOutput(USAGE_ERROR);
+        
+        std::string umf_file = argv[1];
+        std::string output_file="";
+        std::string input_file=""; 
+        for(int i=2;i<argc;i++)
+        {
+            std::string arg = argv[i];
+            if(arg=="-q" || arg=="--charge") write_charge=true;
+            else if(arg=="-i" || arg=="--smiles") write_smiles=true;
+            else if(arg=="-n" || arg=="--num_atoms") write_num_atoms=true;
+            else if(arg=="-b" || arg=="--num_bonds") write_num_bonds=true;
+            else if((arg=="-o" || arg=="--output") && i+1<argc) output_file=argv[++i];
+            else if((arg=="-f" || arg=="--from_file") && i+1<argc) input_file=argv[++i];
+            else
+            {   
+                *error_stream << "Unknown argument: " << arg << "\n";
+                return new UMFPropertyExtractorJobOutput(USAGE_ERROR);
+            }
+        }
+
+        // Check if the file exists
+        std::ifstream infile(umf_file);
+        if (!infile.good())
+        {
+            *error_stream << "Error: UMF file not found: " << umf_file << "\n";
+            return new UMFPropertyExtractorJobOutput(FILE_NOT_FOUND);
+        }
+        else infile.close();
+
+        UMFReader reader(umf_file);
+        if(!reader.hasPointerFile())
+        {
+            try {buildUMFPointerFile(umf_file); if(!reader.refreshPointerFile()) throw std::runtime_error("Pointer file still not found after building");}
+            catch(const std::exception& e)
+            {
+                *error_stream << "Error building pointer file. Resorting to sequential search." << std::endl;
+                return new UMFPropertyExtractorJobOutput(IO_ERROR);
+            }
+        }
+
+        std::ostream* given_output=(this->output_stream);
+        if(!output_file.empty())
+        {
+            std::ofstream* out_file = new std::ofstream(output_file, std::ios::binary);
+            if(!out_file->good())
+            {
+                *error_stream << "Error: Could not open output file: " << output_file << "\n";
+                return new UMFPropertyExtractorJobOutput(IO_ERROR);
+            }
+            given_output=out_file;
+        }
+
+        if(input_file.length()!=0) // Input file was provided
+        {
+            std::ifstream name_file(input_file);
+            if(!name_file.good())
+            {
+                *error_stream << "Error: Input file not found: " << input_file << "\n";
+                return new UMFPropertyExtractorJobOutput(FILE_NOT_FOUND);
+            }
+            std::string next_name;
+            file_pointer position;
+            while(std::getline(name_file, next_name))
+            {
+                next_name.erase(next_name.find_last_not_of(" \n\r\t")+1); // Remove trailing whitespaces
+                if(next_name.empty() || next_name[0]==';') continue;
+                try {position=reader.query_by_name(next_name);}
+                catch(const NoPointerFileFoundException& e)
+                {
+                    *error_stream << "No pointer file found, cannot perform name query. Please provide a pointer file for quick access by name.\n";
+                    return new UMFPropertyExtractorJobOutput(FILE_NOT_FOUND);
+                }
+                catch(const NoSuchMoleculeException& e)
+                {
+                    *output_stream << "Didn't find molecule with name: " << next_name << std::endl;
+                    continue;
+                }
+
+                reader.jumpToMoleculeAtPosition(position);
+                try
+                {
+                    UMDMolecule mol = reader.readMolecule();
+                    this->describeMolecule(mol, given_output);
+                }
+                catch(const NoHeaderRemainingException& e)
+                {
+                    *output_stream << "Didn't find molecule with name: " << next_name << std::endl;
+                    continue;
+                }
+            }
+        }
+        else
+        {
+            // Keep reading input from stdin till user types ^D or ^C
+            std::string next_name;
+            while(true)
+            {
+                *output_stream << "Enter molecule name (or ^D to finish): ";
+                std::getline(std::cin, next_name);
+                if(std::cin.eof()) break; // User typed ^D
+                next_name.erase(next_name.find_last_not_of(" \n\r\t")+1); // Remove trailing whitespaces
+                if(next_name.empty()) continue;
+                file_pointer position;
+                try {position=reader.query_by_name(next_name);}
+                catch(const NoPointerFileFoundException& e)
+                {
+                    *error_stream << "No pointer file found, cannot perform name query. Please provide a pointer file for quick access by name.\n";
+                    return new UMFPropertyExtractorJobOutput(FILE_NOT_FOUND);
+                }
+                catch(const NoSuchMoleculeException& e)
+                {
+                    *output_stream << "Didn't find molecule with name: " << next_name << std::endl;
+                    continue;
+                }
+
+                reader.jumpToMoleculeAtPosition(position);
+                try
+                {
+                    UMDMolecule mol = reader.readMolecule();
+                    this->describeMolecule(mol, given_output);
+                }
+                catch(const NoHeaderRemainingException& e)
+                {
+                    *output_stream << "Didn't find molecule with name: " << next_name << std::endl;
+                    continue;
+                }
+            }
+        }
+    }
+private:
+    inline void describeMolecule(const UMDMolecule& mol, std::ostream* given_output)
+    {
+        *given_output << mol.getName();
+        if(write_smiles) *given_output << " " << (reinterpret_cast<const char*>(mol.getSMILES().getData()));
+        if(write_charge) *given_output << " " << mol.computeNetCharge();
+        if(write_num_atoms) *given_output << " " << mol.getNumAtoms();
+        if(write_num_bonds) *given_output << " " << mol.getNumBonds();
+        *given_output << "\n";
+    }
+};
 #endif
