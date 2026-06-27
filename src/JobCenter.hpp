@@ -25,13 +25,16 @@ public:
     JSONEntry(std::string value) : value({value}) {}
     JSONEntry(std::vector<std::string> value) : value(value) {}
     JSONEntry(std::vector<JSONEntry*> nested_objects) : nested_objects(nested_objects) {}
+    JSONEntry(const std::string& key, const std::string& value) :value({value}) {this->assignKey(key);}
+    JSONEntry(const std::string& key, const std::vector<std::string>& value) : value(value) {this->assignKey(key);}
+    JSONEntry(const std::string& key, const std::vector<JSONEntry*>& nested_objects) : nested_objects(nested_objects) {this->assignKey(key);}
     
     std::string toString() const
     {
         std::string result = key; if(!result.empty()) result = "\""+result+"\": ";
         if(nested_objects.size())
         {
-            if(nested_objects.size()>1) result += "[";
+            if(nested_objects.size()>=1) result += "[";
             else result+= "{\n";
             for(size_t i=0;i<nested_objects.size();i++)
             {
@@ -41,7 +44,7 @@ public:
                 if(i<nested_objects.size()-1) result += ",";
                 result += "\n";
             }
-            if(nested_objects.size()>1) result += "]";
+            if(nested_objects.size()>=1) result += "]";
             else result += "}";
             return result;
         }
@@ -73,7 +76,7 @@ protected:
 
     friend class JobOutput;
 };
-class JobOutput
+/*abstract*/ class JobOutput
 {
     protected:
         int exit_code=0;
@@ -997,6 +1000,8 @@ protected:
             given_output=out_file;
         }
 
+        UMFPropertyExtractorJobOutput* job_output = new UMFPropertyExtractorJobOutput(0);
+        int total_mols=0;
         if(input_file.length()!=0) // Input file was provided
         {
             std::ifstream name_file(input_file);
@@ -1027,7 +1032,8 @@ protected:
                 try
                 {
                     UMDMolecule mol = reader.readMolecule();
-                    this->describeMolecule(mol, given_output);
+                    this->describeMolecule(mol, given_output, job_output);
+                    total_mols++;
                 }
                 catch(const NoHeaderRemainingException& e)
                 {
@@ -1042,7 +1048,7 @@ protected:
             std::string next_name;
             while(true)
             {
-                *output_stream << "Enter molecule name (or ^D to finish): ";
+                if(error_stream) *error_stream << "Enter molecule name (or ^D to finish): "; // Separate the prompt from the output stream to avoid mixing with the formatted molecule output
                 std::getline(std::cin, next_name);
                 if(std::cin.eof()) break; // User typed ^D
                 next_name.erase(next_name.find_last_not_of(" \n\r\t")+1); // Remove trailing whitespaces
@@ -1064,7 +1070,8 @@ protected:
                 try
                 {
                     UMDMolecule mol = reader.readMolecule();
-                    this->describeMolecule(mol, given_output);
+                    this->describeMolecule(mol, given_output, job_output);
+                    total_mols++;
                 }
                 catch(const NoHeaderRemainingException& e)
                 {
@@ -1073,16 +1080,41 @@ protected:
                 }
             }
         }
+        job_output->wrap("read_molecules");
+        job_output->store("total_molecules_read", std::to_string(total_mols));
+        return job_output;
     }
 private:
-    inline void describeMolecule(const UMDMolecule& mol, std::ostream* given_output)
+    inline void describeMolecule(const UMDMolecule& mol, std::ostream* given_output, UMFPropertyExtractorJobOutput* job_output=nullptr)
     {
         *given_output << mol.getName();
-        if(write_smiles) *given_output << " " << (reinterpret_cast<const char*>(mol.getSMILES().getData()));
-        if(write_charge) *given_output << " " << mol.computeNetCharge();
-        if(write_num_atoms) *given_output << " " << mol.getNumAtoms();
-        if(write_num_bonds) *given_output << " " << mol.getNumBonds();
+        std::vector<JSONEntry*> properties;
+        if(write_smiles)
+        {
+            const char* smiles = reinterpret_cast<const char*>(mol.getSMILES().getData());
+            *given_output << " " << smiles;
+            properties.push_back(new JSONEntry("smiles", std::string(smiles)));
+        }
+        if(write_charge)
+        {
+            int net_charge = mol.computeNetCharge();
+            *given_output << " " << net_charge;
+            properties.push_back(new JSONEntry("net_charge", std::to_string(net_charge)));
+        }
+        if(write_num_atoms)
+        {
+            int num_atoms = mol.getNumAtoms();
+            *given_output << " " << num_atoms;
+            properties.push_back(new JSONEntry("num_atoms", std::to_string(num_atoms)));
+        }
+        if(write_num_bonds)
+        {
+            int num_bonds = mol.getNumBonds();
+            *given_output << " " << num_bonds;
+            properties.push_back(new JSONEntry("num_bonds", std::to_string(num_bonds)));
+        }
         *given_output << "\n";
+        if(job_output) job_output->store(mol.getName(), properties);
     }
 };
 #endif
