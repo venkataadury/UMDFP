@@ -1082,6 +1082,11 @@ protected:
         }
         job_output->wrap("read_molecules");
         job_output->store("total_molecules_read", std::to_string(total_mols));
+        if(!output_file.empty()) 
+        {
+            std::ofstream* out_file = dynamic_cast<std::ofstream*>(given_output);
+            if(out_file) out_file->close();
+        }
         return job_output;
     }
 private:
